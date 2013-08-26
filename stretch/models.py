@@ -2,7 +2,7 @@ from django.db import models
 
 
 class Environment(models.Model):
-    name = models.CharField(unique=True)
+    name = models.CharField(max_length=100, unique=True)
 
 
 class Node(models.Model):
