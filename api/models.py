@@ -2,15 +2,21 @@ from django.db import models
 
 
 class Environment(models.Model):
-    name = models.CharField(max_length=100, unique=True)
+    name = models.TextField(unique=True)
+    promotes_to = models.ForeignKey('self')
+    entrypoint = models.BooleanField()
+
+
+class Group(models.Model):
+    name = models.TextField(unique=True)
+    environment = models.ForeignKey(Environment)
+    minimum_nodes = models.IntegerField()
+    maximum_nodes = models.IntegerField()
 
 
 class Node(models.Model):
     environment = models.ForeignKey(Environment)
-
-
-class Group(models.Model):
-    environment = models.ForeignKey(Environment)
+    group = models.ForeignKey(Group)
 
 
 class Trigger(models.Model):
