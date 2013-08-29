@@ -1,6 +1,8 @@
 from django.db import models
 from django_enumfield import enum
 
+from tasks import git
+
 
 class Environment(models.Model):
     name = models.TextField(unique=True)
@@ -18,32 +20,24 @@ class Node(models.Model):
     group = models.ForeignKey(Group)
 
 
+"""
 class Trigger(models.Model):
     environment = models.ForeignKey(Environment)
 
 
 class Action(models.Model):
     trigger = models.OneToOneField(Trigger)
-
-    class Meta:
-        abstract = True
-
-
-class ScaleActionDirection(enum.Enum):
-    UP = 0
-    DOWN = 1
-
-
-class ScaleAction(Action):
-    direction = enum.EnumField(ScaleActionDirection)
+    module, function
 
 
 class Event(models.Model):
     trigger = models.OneToOneField(Trigger)
+    module, function "monitoring"
 
 
 class Metric(models.Model):
     environment = models.ForeignKey(Environment)
+"""
 
 
 class DeployState(enum.Enum):
@@ -52,11 +46,14 @@ class DeployState(enum.Enum):
     FINISHED = 2
 
 
+class Release(models.Model):
+    ref = models.CharField('SHA', max_length=255)
+
+    def push():
+        git.delay()
+
+
 class Deploy(models.Model):
     release = models.ForeignKey(Release)
     target = models.ForeignKey(Environment)
     state = enum.EnumField(DeployState, default=DeployState.PENDING)
-
-
-class Release(models.Model):
-    ref = models.CharField('SHA', max_length=255)

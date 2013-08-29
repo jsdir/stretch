@@ -92,6 +92,11 @@ TEMPLATE_LOADERS = (
 #     'django.template.loaders.eggs.Loader',
 )
 
+TEMPLATE_CONTEXT_PROCESSORS = (
+    'django.core.context_processors.request',
+    'allauth.account.context_processors.account',
+)
+
 MIDDLEWARE_CLASSES = (
     'django.middleware.common.CommonMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
@@ -113,6 +118,14 @@ TEMPLATE_DIRS = (
     # Don't forget to use absolute paths, not relative paths.
 )
 
+AUTHENTICATION_BACKENDS = (
+    # Needed to login by username in Django admin, regardless of `allauth`
+    'django.contrib.auth.backends.ModelBackend',
+
+    # `allauth` specific authentication methods, such as login by e-mail
+    'allauth.account.auth_backends.AuthenticationBackend',
+)
+
 INSTALLED_APPS = (
     'django.contrib.auth',
     'django.contrib.contenttypes',
@@ -126,8 +139,12 @@ INSTALLED_APPS = (
     # 'django.contrib.admindocs',
     'rest_framework',
     'south',
+    'allauth',
+    'allauth.account',
+    'djcelery',
 
     'api',
+    'tasks',
 )
 
 # A sample logging configuration. The only tangible logging
@@ -160,7 +177,17 @@ LOGGING = {
 }
 
 REST_FRAMEWORK = {
-    'PAGINATE_BY': 10
+    'PAGINATE_BY': 10,
+    'DEFAULT_PERMISSION_CLASSES': (
+        'rest_framework.permissions.IsAuthenticated',
+    )
+}
+
+from .celery_settings import *
+
+STRETCH = {
+    'SOURCE': None,
+    'CACHE_DIR': '/var/cache/stretch',
 }
 
 try:
