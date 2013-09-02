@@ -2,10 +2,34 @@ from django.db import models
 from django_enumfield import enum
 
 from tasks import git
+from stretch import plugins
+
+
+class Release(models.Model):
+    tag = models.TextField(unique=True)
+    ref = models.CharField('SHA', max_length=255)
+
+    def push():
+        git.delay()
 
 
 class Environment(models.Model):
     name = models.TextField(unique=True)
+    release = models.ForeignKey(Release)
+    
+    def set_release(self, release):
+        old_release = self.release #?
+        new_release = release
+
+        for plugin_application in old_release.plugin_applications:
+            # Plugin applications need precedence
+            plugin = plugins.get_objects.get(plugin_application.plugin_name)
+
+        # Set new release
+
+        for plugin_application in new_release.plugin_applications:
+            # Plugin applications need some sort of precedence
+            plugin = plugins.get_objects.get(plugin_application.plugin_name)
 
 
 class Group(models.Model):
@@ -34,23 +58,15 @@ class Event(models.Model):
     trigger = models.OneToOneField(Trigger)
     module, function "monitoring"
 
-
+"""
 class Metric(models.Model):
     environment = models.ForeignKey(Environment)
-"""
 
 
 class DeployState(enum.Enum):
     PENDING = 0
     DEPLOYING = 1
     FINISHED = 2
-
-
-class Release(models.Model):
-    ref = models.CharField('SHA', max_length=255)
-
-    def push():
-        git.delay()
 
 
 class Deploy(models.Model):

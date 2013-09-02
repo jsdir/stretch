@@ -2,6 +2,8 @@ from django.conf import settings
 
 
 def run():
+    pass
+    '''
     source = settings.STRETCH['SOURCE']
     backend = settings.STRETCH['BACKEND']
     if source:
@@ -12,3 +14,4 @@ def run():
             
     else:
         raise Undefined Source
+    '''
