@@ -11,8 +11,8 @@ with open('requirements.txt') as f:
 setup(
     name='stretch',
     version=__version__,
-    description="A private PaaS.",
+    description='A private PaaS.',
     long_description=open('README.md').read(),
-    packages=find_packages(),
+    packages=find_packages(exclude=['tests', 'client']),
     install_requires=install_requires
 )
