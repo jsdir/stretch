@@ -50,13 +50,35 @@ class Group(models.Model):
     hosts = generic.GenericRelation(Host)
 
     def scale_up(self, amount):
-        pass
+        self.check_valid_amount(self.host_count + amount)
+
+        for _ in range(amount):
+            pass # task.create_host.delay()
 
     def scale_down(self, amount):
-        pass
+        self.check_valid_amount(self.host_count - amount)
+
+        for _ in range(amount):
+            pass # task.delete_host.delay()
 
     def scale_to(self, amount):
-        pass
+        relative_amount = amount - self.host_count
+        if relative_amount > 0:
+            self.scale_up(relative_amount)
+        elif relative_amount < 0:
+            self.scale_down(-relative_amount)
+
+    def check_valid_amount(self, amount):
+        if self.maximum_nodes == None:
+            valid = amount >= self.minimum_nodes
+        else:
+            valid = self.minimum_nodes <= amount <= self.maximum_nodes
+        if not valid:
+            raise Exception('Invalid scaling amount')
+
+    @property
+    def host_count(self):
+        return self.hosts.count()
 
 
 class Environment(models.Model):
