@@ -19,7 +19,7 @@ class PluginEnvironment(object):
 class NodePluginEnvironment(PluginEnvironment):
     def __init__(self):
         super(NodePluginEnvironment, self).__init__()
-        home_dir = settings.STRETCH['HOME_DIR']
+        home_dir = settings.HOME_DIR
 
         try:
             self.npm_path = os.environ.get['NPM_PATH']

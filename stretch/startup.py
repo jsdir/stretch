@@ -4,13 +4,15 @@ from stretch import utils
 
 
 def run():
-    sources = settings.STRETCH['SOURCES']
-    backend_class = settings.STRETCH['BACKEND']
+    sources = settings.SOURCES
+    backend_class = settings.BACKEND
 
     # Load backend
-    if not backend:
+    if not backend_class:
         raise NameError('No backend defined')
-    backend = utils.get_class(backend)()
+
+    class_name, class_options = backend_class.items()[0]
+    backend = utils.get_class(class_name)(class_options)
 
     # Load sources
     if not sources:

@@ -207,16 +207,14 @@ REST_FRAMEWORK = {
 }
 
 from .celery_settings import *
+from .salt_settings import *
 
-STRETCH = {
-    'SOURCES': {},
-    'BACKEND': {},
-    'CACHE_DIR': '/var/cache/stretch',
-    'HOME_DIR': os.path.join(os.path.expanduser('~'), '.stretch'),
-    'SALT_CONF_PATH': '/etc/salt',
-    'SALT_MASTER': None,
-    'DOMAIN_NAME': None,
-}
+# default settings
+SOURCES = {}
+BACKEND = {}
+CACHE_DIR = '/var/cache/stretch'
+DOMAIN_NAME = None
+SALT_CONF_PATH = '/etc/salt'
 
 try:
     from .local_settings import *

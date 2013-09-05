@@ -85,7 +85,7 @@ class GitRepositorySource(Source):
         if isinstance(data, dict):
             ref = data.get('ref')
 
-        directory = os.path.join(settings.STRETCH['CACHE_DIR'],
+        directory = os.path.join(settings.CACHE_DIR,
                                  hashlib.sha1(self.url).hexdigest())
         log.debug('Using repo directory: %s' % directory)
 

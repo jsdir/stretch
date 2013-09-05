@@ -34,8 +34,8 @@ class Host(models.Model):
     parent = generic.GenericForeignKey('parent_content_type',
                                        'parent_object_id')
 
-    def add_node(self, node_definition):
-        pass
+    def add_node(self, node):
+        node_instance = NodeInstance()
 
     def call_salt(self, *args, **kwargs):
         salt_client.cmd(self.fqdn, *args, **kwargs)
@@ -46,20 +46,27 @@ class Group(models.Model):
     environment = models.ForeignKey(Environment)
     minimum_nodes = models.IntegerField(default=1)
     maximum_nodes = models.IntegerField(default=None)
-
+    node = models.ForeignKey(Node)
     hosts = generic.GenericRelation(Host)
 
     def scale_up(self, amount):
         self.check_valid_amount(self.host_count + amount)
 
         for _ in range(amount):
-            pass # task.create_host.delay()
+            backend.create_host_with_node.delay(self.node)
+
+        # trigger: reset env-wide configuration
 
     def scale_down(self, amount):
         self.check_valid_amount(self.host_count - amount)
 
-        for _ in range(amount):
-            pass # task.delete_host.delay()
+        hosts = self.hosts[0:amount]
+
+        # remove hosts from self
+        # trigger: reset env-wide configuration
+        self.environment # reset configuration generating hostlists 
+        # from the groups
+        [host.delete.delay() for host in self.hosts[0:amount]]
 
     def scale_to(self, amount):
         relative_amount = amount - self.host_count
@@ -120,6 +127,11 @@ class Environment(models.Model):
 
 
 class Node(models.Model):
+    environment = models.ForeignKey(Environment)
+    host = models.ForeignKey(Host)
+
+
+class NodeInstance(models.Model):
     environment = models.ForeignKey(Environment)
     host = models.ForeignKey(Host)
 

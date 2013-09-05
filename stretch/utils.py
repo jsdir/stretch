@@ -24,7 +24,6 @@ def makedirs(path):
             raise
 
 
-salt_master_config = salt.config.master_config(
-    settings.STRETCH['SALT_CONF_PATH'])
+salt_master_config = salt.config.master_config(settings.SALT_CONF_PATH)
 wheel_client = salt.wheel.Wheel(salt_master_config)
 salt_client = salt.client.LocalClient()

@@ -1,6 +1,7 @@
 import os
 import pyrax
 from fabric.api import execute, run, env
+from celery.contrib.methods import task
 
 from django.conf import settings
 from stretch.utils import wheel_client
@@ -11,8 +12,10 @@ class Backend(object):
     def create_host(self):
         raise NotImplementedError
 
-    def scale():
-        raise NotImplementedError
+    @task()
+    def create_host_with_node(self, node):
+        host = self.create_host()
+        host.add_node(node)
 
 
 class AutoloadingBackend(Backend):
@@ -30,7 +33,7 @@ class RackspaceBackend(Backend):
         self.region = options.get('region')
         self.domainname = options.get('domainname')
 
-        if not settings.STRETCH['SALT_MASTER']:
+        if not settings.SALT_MASTER:
             raise NameError('SALT_MASTER undefined')
 
         pyrax.set_credentials(self.username, api_key)
@@ -49,7 +52,7 @@ class RackspaceBackend(Backend):
         upload_template(script, '/root/bootstrap.sh', {
             'hostname': hostname,
             'domain_name': domain_name,
-            'master': settings.STRETCH['SALT_MASTER']
+            'master': settings.SALT_MASTER
         }, use_jinja=True)
 
         run('/bin/bash /root/bootstrap.sh')
@@ -63,7 +66,7 @@ class RackspaceBackend(Backend):
         if server.status != 'ACTIVE':
             raise Exception('Failed to create host')
 
-        domain_name = settings.STRETCH['DOMAIN_NAME']
+        domain_name = settings.DOMAIN_NAME
         if domain_name:
             fqdn = '%s.%s' % (hostname, domain_name)
         else:
@@ -93,7 +96,7 @@ class RackspaceBackend(Backend):
             wheel_client.call_func('key.delete', host.fqdn)
             salt_client.cmd(host.fqdn, 'stretch.delete')
             for server in self.cs.list():
-                if server.name = host.hostname:
+                if server.name == host.hostname:
                     server.delete()
 
     def generate_name(length):

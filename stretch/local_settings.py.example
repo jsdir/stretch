@@ -9,7 +9,7 @@ DATABASES = {
     }
 }
 
-STRETCH['SOURCES'] = {
+SOURCES = {
     'stretch.sources.GitRepositorySource': {
         'url': 'github.com/user/myrepo.git',
     },
@@ -20,9 +20,10 @@ STRETCH['SOURCES'] = {
     },
 }
 
-STRETCH['SALT_CONF_PATH'] = '/etc/salt'
+SALT_CONF_PATH = '/etc/salt'
+SALT_MASTER = 'salt.example.com'
 
-STRETCH['BACKEND'] = {
+BACKEND = {
     'stretch.backends.RackspaceBackend': {
         'username': 'johndoe',
         'api_key': '1234567890abcdef',
@@ -31,5 +32,4 @@ STRETCH['BACKEND'] = {
     }
 }
 
-STRETCH['SALT_MASTER'] = 'salt.example.com'
-STRETCH['DOMAIN_NAME'] = 'example.com'
+DOMAIN_NAME = 'example.com'
