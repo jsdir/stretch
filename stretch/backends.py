@@ -1,16 +1,101 @@
-# import things
+import os
+import pyrax
+from fabric.api import execute, run, env
+
+from django.conf import settings
+from stretch.utils import wheel_client
+from stretch.api import models
+
 
 class Backend(object):
-    def __init__(self):
-        pass
+    def create_host(self):
+        raise NotImplementedError
+
+    def scale():
+        raise NotImplementedError
 
 
-class Autoloads(object):
+class AutoloadingBackend(Backend):
     pass
 
 
-class DockerBackend(Backend):
+class DockerBackend(AutoloadingBackend):
     pass
 
-class RackspaceBackend(Backend, Autoloads):
-    pass
+
+class RackspaceBackend(Backend):
+    def __init__(self, options):
+        self.username = options.get('username')
+        api_key = options.get('api_key')
+        self.region = options.get('region')
+        self.domainname = options.get('domainname')
+
+        if not settings.STRETCH['SALT_MASTER']:
+            raise NameError('SALT_MASTER undefined')
+
+        pyrax.set_credentials(self.username, api_key)
+        self.cs = pyrax.connect_to_cloudservers(region=self.region)
+
+        self.image = [img for img in self.cs.images.list()
+                      if 'Ubuntu 13.04' in img.name][0]
+
+        self.flavor = [flavor for flavor in self.cs.flavors.list()
+                       if flavor.ram == 1024][0]
+
+    def bootstrap_server(self, hostname, domain_name):
+        module_dir = os.path.dirname(__file__)
+        script = os.path.join(module_dir, 'scripts/bootstrap.sh')
+
+        upload_template(script, '/root/bootstrap.sh', {
+            'hostname': hostname,
+            'domain_name': domain_name,
+            'master': settings.STRETCH['SALT_MASTER']
+        }, use_jinja=True)
+
+        run('/bin/bash /root/bootstrap.sh')
+
+    def create_host(self):
+        hostname = 'node-%s' % self.generate_name(8)
+        server = self.cs.servers.create(hostname, self.image.id,
+                                        self.flavor.id)
+        pyrax.utils.wait_for_build(server, interval=10)
+
+        if server.status != 'ACTIVE':
+            raise Exception('Failed to create host')
+
+        domain_name = settings.STRETCH['DOMAIN_NAME']
+        if domain_name:
+            fqdn = '%s.%s' % (hostname, domain_name)
+        else:
+            fqdn = hostname
+
+        ip = server.networks['private'][0]
+        host = 'root@%s' % ip
+        env.passwords[host] = server.adminPass
+        execute(self.bootstrap_server, hostname, domain_name, host=host)
+
+        wheel_client.call_func('key.accept', fqdn)
+
+        host = models.Host(hostname=hostname, fqdn=fqdn, managed=True,
+                           address=ip)
+
+        # Install dependencies
+        host.call_salt('state.highstate')
+        # Synchronize modules
+        host.call_salt('saltutil.sync_all')
+
+        host.save()
+
+        return host
+
+    def delete_host(self, host):
+        if host.managed:
+            wheel_client.call_func('key.delete', host.fqdn)
+            salt_client.cmd(host.fqdn, 'stretch.delete')
+            for server in self.cs.list():
+                if server.name = host.hostname:
+                    server.delete()
+
+    def generate_name(length):
+        hexdigits = '0123456789abcdef'
+        return ''.join(random.choice(hexdigits) for _ in xrange(length))

@@ -1,0 +1,35 @@
+DATABASES = {
+    'default': {
+        'ENGINE': 'django.db.backends.postgresql_psycopg2',
+        'NAME': 'stretch',
+        'USER': 'django',
+        'PASSWORD': 'djangopass',
+        'HOST': 'localhost',
+        'PORT': '',
+    }
+}
+
+STRETCH['SOURCES'] = {
+    'stretch.sources.GitRepositorySource': {
+        'url': 'github.com/user/myrepo.git',
+    },
+    'stretch.sources.FileSystemSource': {
+        'path': '/etc/app/src',
+        'autoload': True,
+        'restart_services': True,
+    },
+}
+
+STRETCH['SALT_CONF_PATH'] = '/etc/salt'
+
+STRETCH['BACKEND'] = {
+    'stretch.backends.RackspaceBackend': {
+        'username': 'johndoe',
+        'api_key': '1234567890abcdef',
+        'domainname': 'example.com',
+        'region': 'DFW',
+    }
+}
+
+STRETCH['SALT_MASTER'] = 'salt.example.com'
+STRETCH['DOMAIN_NAME'] = 'example.com'

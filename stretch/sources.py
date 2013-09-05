@@ -3,6 +3,7 @@ import git
 import hashlib
 import logging
 import yaml
+import importlib
 
 
 
@@ -53,28 +54,31 @@ class Source(object):
         self.nodes = nodes
 
     def get_node_type(self, directory):
-        
+        pass
 
 
 class AutoloadableSource(Source):
-    def __init__(self):
+    """
+    A source that pushes to a compatible backend on a trigger
+    """
+    def __init__(self, options):
         super(AutoloadableSource, self).__init__()
-        self.restart_services = False
+        self.autoload = options.get('autoload')
+        self.restart_services = options.get('restart_services')
 
     def monitor(self):
-        if self.restart_services and self.directory:
-            # Setup filesystem monitoring
-            if self.directory changed:
+        if self.autoload:
+            if self.directory.is_changed:
                 self.on_filesystem_change()
 
-    def on_filesystem_change(self):
+    def on_autoload(self):
         raise NotImplementedError
 
 
 class GitRepositorySource(Source):
-    def __init__(self, repo_url):
+    def __init__(self, options):
         super(GitRepositorySource, self).__init__()
-        self.repo_url = repo_url
+        self.url = options.get('url')
 
     def pull(self, data=None):
         ref = None
@@ -82,7 +86,7 @@ class GitRepositorySource(Source):
             ref = data.get('ref')
 
         directory = os.path.join(settings.STRETCH['CACHE_DIR'],
-                                 hashlib.sha1(self.repo_url).hexdigest())
+                                 hashlib.sha1(self.url).hexdigest())
         log.debug('Using repo directory: %s' % directory)
 
         log.debug('Checking if cached repo exists...')
@@ -91,13 +95,15 @@ class GitRepositorySource(Source):
             repo = git.Repo(directory)
             # Pull repository changes
             repo.remotes.origin.pull()
+        for node_dir in node_dirs:
+            self.nodes.append(self.get_node_type(node_dir))gin.pull()
         else:
             log.debug('Cached repo doesn\'t exist')
-            log.info('Cloning repo: %s' % self.repo_url)
+            log.info('Cloning repo: %s' % self.url)
             # Create directory
             os.makedirs(directory)
             # Clone the repository into cache
-            repo = git.Repo.clone_from(self.repo_url, directory)
+            repo = git.Repo.clone_from(self.url, directory)
 
         if ref:
             log.info('Using commit: %s' % ref)
@@ -110,9 +116,9 @@ class GitRepositorySource(Source):
 
 
 class FileSystemSource(AutoloadableSource):
-    def __init__(self, directory):
-        super(FileSystemSource, self).__init__()
-        self.directory = directory
+    def __init__(self, options):
+        super(FileSystemSource, self).__init__(options)
+        self.directory = options.get('directory')
 
     def pull(self, data=None):
         return self.directory

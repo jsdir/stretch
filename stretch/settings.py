@@ -1,3 +1,4 @@
+import os
 # Django settings for stretch project.
 
 DEBUG = True
@@ -208,11 +209,16 @@ REST_FRAMEWORK = {
 from .celery_settings import *
 
 STRETCH = {
-    'SOURCE': None,
+    'SOURCES': {},
+    'BACKEND': {},
     'CACHE_DIR': '/var/cache/stretch',
+    'HOME_DIR': os.path.join(os.path.expanduser('~'), '.stretch'),
+    'SALT_CONF_PATH': '/etc/salt',
+    'SALT_MASTER': None,
+    'DOMAIN_NAME': None,
 }
 
 try:
-    from local_settings import *
+    from .local_settings import *
 except ImportError:
     pass
