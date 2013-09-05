@@ -6,7 +6,6 @@ from setuptools import setup, find_packages
 with open('requirements.txt') as f:
     install_requires = f.read().splitlines()
 
-print install_requires
 setup(
     name='stretch',
     version='0.1.0',
