@@ -3,7 +3,7 @@ from django_enumfield import enum
 from django.contrib.contenttypes.models import ContentType
 from django.contrib.contenttypes import generic
 
-from tasks import git
+from stretch.tasks import git
 from stretch import plugins
 from stretch.utils import salt_client
 
@@ -39,53 +39,6 @@ class Host(models.Model):
 
     def call_salt(self, *args, **kwargs):
         salt_client.cmd(self.fqdn, *args, **kwargs)
-
-
-class Group(models.Model):
-    name = models.TextField(unique=True)
-    environment = models.ForeignKey(Environment)
-    minimum_nodes = models.IntegerField(default=1)
-    maximum_nodes = models.IntegerField(default=None)
-    node = models.ForeignKey(Node)
-    hosts = generic.GenericRelation(Host)
-
-    def scale_up(self, amount):
-        self.check_valid_amount(self.host_count + amount)
-
-        for _ in range(amount):
-            backend.create_host_with_node.delay(self.node)
-
-        # trigger: reset env-wide configuration
-
-    def scale_down(self, amount):
-        self.check_valid_amount(self.host_count - amount)
-
-        hosts = self.hosts[0:amount]
-
-        # remove hosts from self
-        # trigger: reset env-wide configuration
-        self.environment # reset configuration generating hostlists 
-        # from the groups
-        [host.delete.delay() for host in self.hosts[0:amount]]
-
-    def scale_to(self, amount):
-        relative_amount = amount - self.host_count
-        if relative_amount > 0:
-            self.scale_up(relative_amount)
-        elif relative_amount < 0:
-            self.scale_down(-relative_amount)
-
-    def check_valid_amount(self, amount):
-        if self.maximum_nodes == None:
-            valid = amount >= self.minimum_nodes
-        else:
-            valid = self.minimum_nodes <= amount <= self.maximum_nodes
-        if not valid:
-            raise Exception('Invalid scaling amount')
-
-    @property
-    def host_count(self):
-        return self.hosts.count()
 
 
 class Environment(models.Model):
@@ -134,6 +87,53 @@ class Node(models.Model):
 class NodeInstance(models.Model):
     environment = models.ForeignKey(Environment)
     host = models.ForeignKey(Host)
+
+
+class Group(models.Model):
+    name = models.TextField(unique=True)
+    environment = models.ForeignKey(Environment)
+    minimum_nodes = models.IntegerField(default=1)
+    maximum_nodes = models.IntegerField(default=None)
+    node = models.ForeignKey(Node)
+    hosts = generic.GenericRelation(Host)
+
+    def scale_up(self, amount):
+        self.check_valid_amount(self.host_count + amount)
+
+        for _ in range(amount):
+            backend.create_host_with_node.delay(self.node)
+
+        # trigger: reset env-wide configuration
+
+    def scale_down(self, amount):
+        self.check_valid_amount(self.host_count - amount)
+
+        hosts = self.hosts[0:amount]
+
+        # remove hosts from self
+        # trigger: reset env-wide configuration
+        self.environment # reset configuration generating hostlists 
+        # from the groups
+        [host.delete.delay() for host in self.hosts[0:amount]]
+
+    def scale_to(self, amount):
+        relative_amount = amount - self.host_count
+        if relative_amount > 0:
+            self.scale_up(relative_amount)
+        elif relative_amount < 0:
+            self.scale_down(-relative_amount)
+
+    def check_valid_amount(self, amount):
+        if self.maximum_nodes == None:
+            valid = amount >= self.minimum_nodes
+        else:
+            valid = self.minimum_nodes <= amount <= self.maximum_nodes
+        if not valid:
+            raise Exception('Invalid scaling amount')
+
+    @property
+    def host_count(self):
+        return self.hosts.count()
 
 
 """

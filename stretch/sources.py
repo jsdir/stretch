@@ -6,7 +6,7 @@ import yaml
 import importlib
 
 
-
+"""
 import watchdog
 class FileSystemEventHandler(watchdog.events.FileSystemEventHandler):
     def __init__(self, callback):
@@ -14,7 +14,7 @@ class FileSystemEventHandler(watchdog.events.FileSystemEventHandler):
         self.callback = callback
 
     def on_any_event(self, event):
-        self.callback()
+        self.callback()"""
 
 
 from django.conf import settings
@@ -96,7 +96,8 @@ class GitRepositorySource(Source):
             # Pull repository changes
             repo.remotes.origin.pull()
         for node_dir in node_dirs:
-            self.nodes.append(self.get_node_type(node_dir))gin.pull()
+            self.nodes.append(self.get_node_type(node_dir))
+            #gin.pull()
         else:
             log.debug('Cached repo doesn\'t exist')
             log.info('Cloning repo: %s' % self.url)

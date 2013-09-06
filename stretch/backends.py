@@ -12,10 +12,21 @@ class Backend(object):
     def create_host(self):
         raise NotImplementedError
 
+    def delete_host(self, host):
+        raise NotImplementedError
+
     @task()
     def create_host_with_node(self, node):
         host = self.create_host()
         host.add_node(node)
+
+
+class MockBackend(Backend):
+    def __init__(self, options): pass
+
+    def create_host(self): pass
+
+    def delete_host(self, host): pass
 
 
 class AutoloadingBackend(Backend):
@@ -36,6 +47,7 @@ class RackspaceBackend(Backend):
         if not settings.SALT_MASTER:
             raise NameError('SALT_MASTER undefined')
 
+        pyrax.set_setting('identity_type', 'rackspace')
         pyrax.set_credentials(self.username, api_key)
         self.cs = pyrax.connect_to_cloudservers(region=self.region)
 

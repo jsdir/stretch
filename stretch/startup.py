@@ -1,6 +1,7 @@
 from django.conf import settings
 
 from stretch import utils
+from stretch.sources import AutoloadableSource
 
 
 def run():
@@ -20,8 +21,9 @@ def run():
 
     for source_class, options in sources.iteritems():
         source = utils.get_class(source_class)(options)
-        if issubclass(source, AutoloadableSource):
-            source.on_autoload = backend.pull
-            fork(source.monitor())
+        if isinstance(source, AutoloadableSource):
+            pass
+            # source.on_autoload = backend.pull
+            # fork(source.monitor())
         else:
             pass
