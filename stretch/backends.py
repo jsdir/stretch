@@ -19,6 +19,7 @@ class Backend(object):
     def create_host_with_node(self, node):
         host = self.create_host()
         host.add_node(node)
+        return host
 
 
 class MockBackend(Backend):
@@ -89,16 +90,10 @@ class RackspaceBackend(Backend):
         env.passwords[host] = server.adminPass
         execute(self.bootstrap_server, hostname, domain_name, host=host)
 
-        wheel_client.call_func('key.accept', fqdn)
-
         host = models.Host(hostname=hostname, fqdn=fqdn, managed=True,
                            address=ip)
 
-        # Install dependencies
-        host.call_salt('state.highstate')
-        # Synchronize modules
-        host.call_salt('saltutil.sync_all')
-
+        host.provision()
         host.save()
 
         return host

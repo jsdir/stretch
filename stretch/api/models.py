@@ -35,7 +35,25 @@ class Host(models.Model):
                                        'parent_object_id')
 
     def add_node(self, node):
-        node_instance = NodeInstance()
+        node_instance = NodeInstance(node=node, host=self)
+        self.call_salt('stretch.add_node', node.node_type)
+        node_instance.save()
+
+    def accept_key(self):
+        wheel_client.call_func('key.accept', self.fqdn)
+
+    def delete_key(self):
+        wheel_client.call_func('key.delete', self.fqdn)
+
+    def sync(self):
+        # Install dependencies
+        self.call_salt('state.highstate')
+        # Synchronize modules
+        self.call_salt('saltutil.sync_all')
+
+    def provision(self):
+        self.accept_key()
+        self.sync()
 
     def call_salt(self, *args, **kwargs):
         salt_client.cmd(self.fqdn, *args, **kwargs)
@@ -64,28 +82,28 @@ class Environment(models.Model):
             plugin = plugins.get_objects.get(plugin_application.plugin_name)
             plugin.after_release_change(old_release, new_release, self)
 
-    def add_host(self, node_definition, minion_id=None):
-        if not minion_id:
-            host = backend.create_host()
-        else:
-            pass # create unmanaged host
-
+    def add_host(self, node):
+        host = backend.create_host()
         host.parent = self
         host.save()
+        return host
 
-        # Apply build
-        salt_client.cmd(minion_id, 'stretch.deploy', [node_definition.type, self.release.id])
-
+    def add_unmanaged_host(self, node, fqdn, hostname, address):
+        host = Host(hostname=hostname, fqdn=fqdn, managed=False,
+                    address=address)
+        host.provision()
+        host.parent = self
+        host.save()
         return host
 
 
 class Node(models.Model):
+    node_type = models.TextField(unique=True)
     environment = models.ForeignKey(Environment)
-    host = models.ForeignKey(Host)
 
 
 class NodeInstance(models.Model):
-    environment = models.ForeignKey(Environment)
+    node = models.ForeignKey(Node)
     host = models.ForeignKey(Host)
 
 
@@ -101,8 +119,11 @@ class Group(models.Model):
         self.check_valid_amount(self.host_count + amount)
 
         for _ in range(amount):
-            backend.create_host_with_node.delay(self.node)
+            host = backend.create_host_with_node.delay(self.node)
+            host.parent = self
+            host.save()
 
+        # Change group load balancer
         # trigger: reset env-wide configuration
 
     def scale_down(self, amount):
@@ -111,10 +132,11 @@ class Group(models.Model):
         hosts = self.hosts[0:amount]
 
         # remove hosts from self
+        [host.parent = None for host in hosts]
         # trigger: reset env-wide configuration
         self.environment # reset configuration generating hostlists 
         # from the groups
-        [host.delete.delay() for host in self.hosts[0:amount]]
+        [host.delete.delay() for host in hosts]
 
     def scale_to(self, amount):
         relative_amount = amount - self.host_count
