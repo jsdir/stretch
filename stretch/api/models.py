@@ -20,8 +20,36 @@ class Release(AuditedModel):
     tag = models.TextField(unique=True)
     ref = models.CharField('SHA', max_length=255)
 
-    def push():
-        git.delay()
+    @classmethod
+    def create_from_sources(sources):
+        """
+        Release.create_from_sources({git_source: {'ref': new_ref}})
+
+        sources = {
+            <Source>: {'ref': 'someref'},
+        }
+
+        This method not be run concurrently. Locks? Celery tasks?
+        """
+
+        # Acquire lock
+        for source, pull_options in sources:
+            source.pull(pull_options)
+
+        # The release needs to be processed here
+        # nodes
+        # config
+        # pretty much everything...
+
+        # Release lock
+        release = cls()
+        release.save()
+
+        # Push release to all auto-deploying environments
+        for environment in Environment.objects.filter(auto_deploy=True):
+            environment.deploy(release)
+
+        return release
 
 
 class Host(models.Model):
@@ -38,6 +66,9 @@ class Host(models.Model):
         node_instance = NodeInstance(node=node, host=self)
         self.call_salt('stretch.add_node', node.node_type)
         node_instance.save()
+
+    def stop_all_nodes(self):
+        pass
 
     def accept_key(self):
         wheel_client.call_func('key.accept', self.fqdn)
@@ -62,10 +93,10 @@ class Host(models.Model):
 class Environment(models.Model):
     name = models.TextField(unique=True)
     release = models.ForeignKey(Release)
-
+    auto_deploy = models.BooleanField(default=False)
     hosts = generic.GenericRelation(Host)
     
-    def set_release(self, release):
+    def deploy(self, release):
         old_release = self.release
         new_release = release
 
@@ -99,7 +130,6 @@ class Environment(models.Model):
 
 class Node(models.Model):
     node_type = models.TextField(unique=True)
-    environment = models.ForeignKey(Environment)
 
 
 class NodeInstance(models.Model):

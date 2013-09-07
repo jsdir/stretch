@@ -25,12 +25,13 @@ log = logging.getLogger(__name__)
 
 class Source(object):
     def __init__(self):
-        self.directory = None
-        self.nodes = []
+        self.path = None
+        # self.nodes = []
 
-    def pull(self):
+    def pull(self, options=None):
         raise NotImplementedError
 
+    """
     def update_nodes(self):
         nodes = []
         node_dirs = []
@@ -55,6 +56,7 @@ class Source(object):
 
     def get_node_type(self, directory):
         pass
+    """
 
 
 class AutoloadableSource(Source):
@@ -79,32 +81,37 @@ class GitRepositorySource(Source):
     def __init__(self, options):
         super(GitRepositorySource, self).__init__()
         self.url = options.get('url')
+        self.path = None
 
-    def pull(self, data=None):
+    def get_path(self):
+        if not self.path:
+            self.pull()
+        return self.path
+
+    def pull(self, options=None):
         ref = None
-        if isinstance(data, dict):
-            ref = data.get('ref')
+        if isinstance(options, dict):
+            ref = options.get('ref')
 
-        directory = os.path.join(settings.CACHE_DIR,
+        self.path = os.path.join(settings.CACHE_DIR,
                                  hashlib.sha1(self.url).hexdigest())
-        log.debug('Using repo directory: %s' % directory)
+        log.debug('Using repo directory: %s' % self.path)
 
         log.debug('Checking if cached repo exists...')
-        if os.path.exists(directory):
+        if os.path.exists(self.path):
             log.debug('Cached repo exists')
-            repo = git.Repo(directory)
+            repo = git.Repo(self.path)
             # Pull repository changes
             repo.remotes.origin.pull()
-        for node_dir in node_dirs:
-            self.nodes.append(self.get_node_type(node_dir))
-            #gin.pull()
+            #for node_dir in node_dirs:
+            #    self.nodes.append(self.get_node_type(node_dir))
         else:
             log.debug('Cached repo doesn\'t exist')
             log.info('Cloning repo: %s' % self.url)
             # Create directory
-            os.makedirs(directory)
+            os.makedirs(self.path)
             # Clone the repository into cache
-            repo = git.Repo.clone_from(self.url, directory)
+            repo = git.Repo.clone_from(self.url, self.path)
 
         if ref:
             log.info('Using commit: %s' % ref)
@@ -113,13 +120,13 @@ class GitRepositorySource(Source):
             log.info('No commit specified.')
             log.info('Using commit: %s' % repo.head.commit.hexsha)
 
-        return directory
-
 
 class FileSystemSource(AutoloadableSource):
     def __init__(self, options):
         super(FileSystemSource, self).__init__(options)
-        self.directory = options.get('directory')
+        self.path = options.get('path')
 
-    def pull(self, data=None):
-        return self.directory
+    def get_path(self):
+        return self.path
+
+    def pull(self, options=None): pass
