@@ -1,6 +1,7 @@
 import os
 import errno
 import importlib
+import lockfile
 import salt.client
 import salt.config
 import salt.wheel
@@ -22,6 +23,11 @@ def makedirs(path):
             pass
         else:
             raise
+
+
+def lock(name):
+    lock_dir = settings.LOCK_DIR
+    return lockfile.FileLock(os.path.join(lock_dir, '%s.lock' % name))
 
 
 salt_master_config = salt.config.master_config(settings.SALT_CONF_PATH)

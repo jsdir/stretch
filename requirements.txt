@@ -5,6 +5,7 @@ PyYAML==3.10
 psycopg2==2.5.1
 south==0.8.2
 pyrax==1.4.11
+lockfile==0.9.1
 Fabric==1.7.0
 Jinja2==2.7
 djangorestframework==2.3.7

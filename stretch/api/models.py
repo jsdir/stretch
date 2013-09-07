@@ -6,6 +6,7 @@ from celery import current_task
 from celery.contrib.methods import task
 
 from stretch import plugins
+from stretch import utils
 from stretch.utils import salt_client
 
 
@@ -22,27 +23,27 @@ class Release(AuditedModel):
     ref = models.CharField('SHA', max_length=255)
 
     @classmethod
-    def create_from_sources(sources):
+    def create_from_sources(cls, sources):
         """
         Release.create_from_sources({git_source: {'ref': new_ref}})
 
         sources = {
             <Source>: {'ref': 'someref'},
         }
-
-        This method not be run concurrently. Locks? Celery tasks?
         """
 
         # Acquire lock
-        for source, pull_options in sources:
-            source.pull(pull_options)
+        lock = utils.lock('source_pull')
+        with lock:
+            for source, pull_options in sources:
+                source.pull(pull_options)
+                path = source.get_path()
 
-        # The release needs to be processed here
-        # nodes
-        # config
-        # pretty much everything...
 
-        # Release lock
+            # Process the release
+            pass
+
+
         release = cls()
         release.save()
 

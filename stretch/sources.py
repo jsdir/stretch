@@ -31,6 +31,9 @@ class Source(object):
     def pull(self, options=None):
         raise NotImplementedError
 
+    def get_path(self):
+        raise NotImplementedError
+
     """
     def update_nodes(self):
         nodes = []

@@ -213,6 +213,7 @@ from .salt_settings import *
 SOURCES = {}
 BACKEND = {}
 CACHE_DIR = '/var/cache/stretch'
+LOCK_DIR = '/var/lock/stretch'
 DOMAIN_NAME = None
 SALT_CONF_PATH = '/etc/salt'
 
