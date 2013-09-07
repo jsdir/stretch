@@ -2,6 +2,8 @@ from django.db import models
 from django_enumfield import enum
 from django.contrib.contenttypes.models import ContentType
 from django.contrib.contenttypes import generic
+from celery import current_task
+from celery.contrib.methods import task
 
 from stretch.tasks import git
 from stretch import plugins
@@ -97,16 +99,27 @@ class Environment(models.Model):
     hosts = generic.GenericRelation(Host)
     
     def deploy(self, release):
+        result = self.deploy_task.delay(release)
+        deploy = Deploy(release=release, target=self, task_id=result.id)
+        deploy.save()
+
+    @task()
+    def deploy_task(self, release):
         old_release = self.release
         new_release = release
 
-        for plugin_application in old_release.plugin_applications:
-            # Plugin applications need precedence
-            plugin = plugins.get_objects.get(plugin_application.plugin_name)
-            plugin.before_release_change(old_release, new_release, self)
+        current_task.update_state(state='PROGRESS',
+            meta={'current': 1, 'total': 2})
+
+        if old_release:
+            for plugin_application in old_release.plugin_applications:
+                # Plugin applications need precedence
+                plugin = plugins.get_objects.get(plugin_application.plugin_name)
+                plugin.before_release_change(old_release, new_release, self)
 
         # Set new release
-
+        current_task.update_state(state='PROGRESS',
+            meta={'current': 2, 'total': 2})
 
         for plugin_application in new_release.plugin_applications:
             # Plugin applications need some sort of precedence
@@ -207,13 +220,8 @@ class Metric(models.Model):
     environment = models.ForeignKey(Environment)
 
 
-class DeployState(enum.Enum):
-    PENDING = 0
-    DEPLOYING = 1
-    FINISHED = 2
-
-
 class Deploy(models.Model):
     release = models.ForeignKey(Release)
     target = models.ForeignKey(Environment)
-    state = enum.EnumField(DeployState, default=DeployState.PENDING)
+    task_id = models.CharField(max_length=128)
+    finished = models.BooleanField(default=False)
