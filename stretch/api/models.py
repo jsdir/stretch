@@ -5,7 +5,6 @@ from django.contrib.contenttypes import generic
 from celery import current_task
 from celery.contrib.methods import task
 
-from stretch.tasks import git
 from stretch import plugins
 from stretch.utils import salt_client
 
@@ -175,7 +174,8 @@ class Group(models.Model):
         hosts = self.hosts[0:amount]
 
         # remove hosts from self
-        [host.parent = None for host in hosts]
+        for host in hosts:
+            host.parent = None
         # trigger: reset env-wide configuration
         self.environment # reset configuration generating hostlists 
         # from the groups
@@ -224,4 +224,3 @@ class Deploy(models.Model):
     release = models.ForeignKey(Release)
     target = models.ForeignKey(Environment)
     task_id = models.CharField(max_length=128)
-    finished = models.BooleanField(default=False)
