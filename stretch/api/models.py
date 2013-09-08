@@ -5,8 +5,7 @@ from django.contrib.contenttypes import generic
 from celery import current_task
 from celery.contrib.methods import task
 
-from stretch import plugins
-from stretch import utils
+from stretch import plugins, utils, parser
 from stretch.utils import salt_client
 
 
@@ -37,12 +36,7 @@ class Release(AuditedModel):
         with lock:
             for source, pull_options in sources:
                 source.pull(pull_options)
-                path = source.get_path()
-
-
-            # Process the release
-            pass
-
+                nodes = parser.get_nodes(source.get_path())
 
         release = cls()
         release.save()

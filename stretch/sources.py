@@ -2,7 +2,6 @@ import os
 import git
 import hashlib
 import logging
-import yaml
 import importlib
 
 
@@ -33,33 +32,6 @@ class Source(object):
 
     def get_path(self):
         raise NotImplementedError
-
-    """
-    def update_nodes(self):
-        nodes = []
-        node_dirs = []
-
-        if self.directory:
-            nodes_file = os.patch.join(self.directory, 'nodes.yml')
-
-            if os.exists(nodes_file):
-                # Multi-node source
-                # top-level nodes.yml defined
-                with open(nodes_file) as source:
-                    nodes = yaml.load(source.read())
-                    node_dirs = nodes.values()
-            else:
-                # Single-node source
-                node_dirs.append(self.directory)
-
-        for node_dir in node_dirs:
-            self.nodes.append(self.get_node_type(node_dir))
-
-        self.nodes = nodes
-
-    def get_node_type(self, directory):
-        pass
-    """
 
 
 class AutoloadableSource(Source):
