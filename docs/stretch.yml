@@ -1,0 +1,47 @@
+# ====== /stretch.yml ====== #
+nodes:
+  web: web
+  worker: worker
+  messaging: messaging
+  rabbitmq: rabbitmq
+  memcached: memcached
+
+# global configuration
+config:
+  mysql: {{ services.mysql }}
+
+# local, node-based options
+local_options:
+  mysql_configuration:
+    includes:
+      - web
+      - worker
+      - messaging
+    config:
+      mysql: {{ services.mysql }}
+
+  other_configuration:
+    includes:
+      - web
+      - worker
+      - messaging
+    config:
+      mysql: {{ services.mysql }}
+    node:
+      dockerfile: Overriden
+
+plugins:
+  migrations:
+    path: stretch/plugins/migrations
+    encrypted_data: !encrypted |-
+      deadbeef
+
+# ====== /web/stretch.yml ====== #
+node:
+  dockerfile: Dockerfile
+  files: files
+  templates: templates
+  base_images: ../stretch/base
+
+config:
+  rabbitmq: {{ services.rabbitmq }}

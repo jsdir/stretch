@@ -37,6 +37,8 @@ class Release(AuditedModel):
             for source, pull_options in sources:
                 source.pull(pull_options)
                 nodes = parser.get_nodes(source.get_path())
+                # TODO: merge multiple sources
+            config = Configuration.from_json(nodes)
 
         release = cls()
         release.save()

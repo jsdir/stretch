@@ -18,12 +18,9 @@ def update(d, u):
 
 def get_nodes(path):
     result = {'plugins': {}, 'nodes': {}}
-    stretch_file = os.path.join(path, 'stretch.yml')
 
-    if os.path.exists(stretch_file):
-        with open(stretch_file) as source:
-            data = yaml.load(source.read())
-
+    data = get_node(path)
+    if data:
         nodes = data.get('nodes')
         if nodes:
             # file is root descriptor

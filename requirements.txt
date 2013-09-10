@@ -8,6 +8,7 @@ pyrax==1.4.11
 lockfile==0.9.1
 Fabric==1.7.0
 Jinja2==2.7
+python-gnupg==0.3.5
 djangorestframework==2.3.7
 django-enumfield==1.0c1
 django-allauth==0.12.0
