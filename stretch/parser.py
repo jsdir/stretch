@@ -42,7 +42,7 @@ def get_nodes(path):
                 node_data = dict(config)
 
                 # apply local options
-                node_local_data = local_data.get(node_name)
+                node_local_data = local_options.get(node_name)
                 if node_local_data:
                     node_data.update(node_local_data)
 
