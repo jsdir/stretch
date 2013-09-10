@@ -1,5 +1,19 @@
 import os
 import yaml
+import collections
+
+
+def update(d, u):
+    """
+    Recursively merge dict-like objects
+    """
+    for k, v in u.iteritems():
+        if isinstance(v, collections.Mapping):
+            r = update(d.get(k, {}), v)
+            d[k] = r
+        else:
+            d[k] = u[k]
+    return d
 
 
 def get_nodes(path):
@@ -19,14 +33,14 @@ def get_nodes(path):
 
             # local options
             local_options = {}
-            local_data = data.get('local')
+            local_data = data.get('local_options')
             if local_data:
                 for options in local_data.values():
                     if options.has_key('includes'):
                         includes = options.pop('includes')
                         for node_name in includes:
                             if local_options.has_key(node_name):
-                                local_options[node_name].update(options)
+                                update(local_options[node_name], options)
                             else:
                                 local_options[node_name] = options
 
@@ -39,15 +53,15 @@ def get_nodes(path):
                 full_node_path = os.path.join(path, node_path)
 
                 # apply global configuration
-                node_data = dict(config)
+                node_data = {'config': dict(config)}
 
                 # apply local options
                 node_local_data = local_options.get(node_name)
                 if node_local_data:
-                    node_data.update(node_local_data)
+                    update(node_data, node_local_data)
 
                 # apply file options
-                node_data.update(get_node(full_node_path))
+                update(node_data, get_node(full_node_path))
 
                 result['nodes'][node_name] = node_data
         else:
