@@ -1,6 +1,6 @@
 # Stretch Pipeline
 
-The stretch pipeline moves apps and their configurations from sources to the backend. There are many stages in the pipeline, each allowing a degree of configuration and flexibility. Essentially, the pipeline consists of two major steps: `build` and `deploy`. The output for both of these steps are logged for realtime display in the web client. 
+The Stretch Pipeline moves apps and their configurations from sources to the backend. There are many stages in the pipeline, each allowing a degree of configuration and flexibility. Essentially, the pipeline consists of two major steps: `build` and `deploy`. The output for both of these steps are logged for realtime display in the web client. 
 
 
 ## Build
@@ -21,7 +21,7 @@ The stages of the build step:
 Code is pulled from all defined sources and placed in a temporary folder called the buffer. Sources overwrite each other based on source priority. Source priority is determined by the order of source declaration in the stretch configuration. Sources defined later override sources defined earlier.
 
 ### Decrypt
-The buffer is checked for stretch configuration files. These files are parsed in order to find all secret configuration data and encrypted files which are then decrypted with the private key. Decrypted configuration data is inserted into normal configuration data with the use of the `encrypted` directive. The parsed data is also used by the following stage.
+The buffer is checked for the release [Build Files](build_files.md). These files are parsed in order to find all secret configuration data and encrypted files which are then decrypted with the private key. Decrypted configuration data is inserted into the existing release Build Files with the use of the `encrypted` directive. The parsed data is also used by the following stage.
 
 Decryption takes place before archiving because the private key is assumed to be ephemeral. Rollbacks and other deploys should be able to work without access to the keypair used when the release was built.
 
@@ -59,7 +59,7 @@ This deploy step is normally executed after a build, but it is also run when a r
 
 When an environment is changed (structure, services, hosts), this deploy step is partially executed. Since configuration alone needs to be updated across nodes, plugins and image pushing (stages 1, 2, parts of stage 4, and 5, 6, 7) are skipped because they are unnecessary. Instead of a completely changed release (stage 5), the nodes are just commanded to load new configuration.
 
-Two release buffers are used in the deploy step: the *new release buffer* and the *existing release buffer*. Release buffers are basically folders that contain releases. They are solely used by plugins that inspect both the existing and new release on each deploy. Each environment has both of these release buffers. Since both buffers are stored on the file system, they persist even after deployment. This eliminates the need to pull both releases for every deploy. If any of the buffers are nonexistent or corrupted, stretch will pull the correct releases, and will continue with deployment.
+Two release buffers are used in the deploy step: the *new release buffer* and the *existing release buffer*. Release buffers are basically folders that contain releases. They are solely used by plugins that inspect both the existing and new release on each deploy. Each environment has both of these release buffers. Since both buffers are stored on the file system, they persist even after deployment. This fully eliminates the need to pull both releases for every deploy, but if any of the buffers are nonexistent or corrupted, stretch will pull the correct releases, and will continue with deployment.
 
 ### Pull release
 The release to be deployed is selected from the archives and extracted into the *new release buffer*. Both buffers are configured to be accessed by deploy plugins. For example, during the deploy step, the migration plugin needs access to the files of both the old and new releases. During a standard deploy, the plugin migrates the database to the most recent migration in the new release. However, if the deploy is a rollback, only the existing release will contain the extra migration data needed to rollback. This is because only the existing release contains the `down` migrations that the release being rolled back to doesn't have. The plugin will find the most recent migration in the new release and will use the migrations in the existing release to rollback the database.
