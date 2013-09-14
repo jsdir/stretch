@@ -86,7 +86,7 @@ The configuration trees are pushed to their corresponding nodes. Each node pulls
 
 ### Change release
 
-Each node affected by the deploy is then commanded to switch to the new release. This process is done incrementally based on groups to prevent a full system outage and to ensure a zero-downtime deploy.
+Each node affected by the deploy is then commanded via it's agent to switch to the new release. This process is done incrementally based on groups to prevent a full system outage and to ensure a zero-downtime deploy.
 
 ### Switch buffers
 
