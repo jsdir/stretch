@@ -37,7 +37,7 @@ plugins:
         option: value
 ```
 
-- `container` defines the [Container](container.md) that the node should use. By default, this field is `container/container.yml`.
+- `container` defines the [Container](container.md) that the node should use. By default, the value is `container/container.yml`.
 
 - `plugins` is a tree of deploy plugins that will be executed when the node is deployed.
 
@@ -53,7 +53,7 @@ rabbitmq: {{ services.rabbitmq }}
 app_password: !secret passwords.app_password
 ```
 
-As shown above with the `mysql` and `rabbitmq` keys, `config.yml` can written as a jinja template using the the Deploy Context. Secret data can also be inserted using the `!secret` tag.
+As shown above with the `mysql` and `rabbitmq` keys, `config.yml` can written as a jinja template using the the [Deploy Context](template_contexts.md). Secret data can also be inserted using the `!secret` tag.
 
 #### secrets.yml
 `secrets.yml` stores sensitive information that can be accessed by the `config.yml` build file. The reason secret data and configuration are separated into different files is that decryption and template compilation happen at two completely different times in the Stretch Pipeline.
