@@ -44,14 +44,14 @@ plugins:
 #### config.yml
 `config.yml` defines node-specific configuration.
 
-    ```yaml
-    app_name: FooBar
+```yaml
+app_name: FooBar
 
-    mysql: {{ services.mysql }}
-    rabbitmq: {{ services.rabbitmq }}
+mysql: {{ services.mysql }}
+rabbitmq: {{ services.rabbitmq }}
 
-    app_password: !secret passwords.app_password
-    ```
+app_password: !secret passwords.app_password
+```
 
 As shown above with the `mysql` and `rabbitmq` keys, `config.yml` can written as a jinja template using the the Deploy Context. Secret data can also be inserted using the `!secret` tag.
 
