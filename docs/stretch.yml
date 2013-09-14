@@ -6,35 +6,55 @@ nodes:
   rabbitmq: rabbitmq
   memcached: memcached
 
-# global configuration
-config:
-  mysql: {{ services.mysql }}
-
-# local, node-based options
-local_options:
-  mysql_configuration:
-    includes:
-      - web
-      - worker
-      - messaging
-    config:
-      mysql: {{ services.mysql }}
-
-  other_configuration:
-    includes:
-      - web
-      - worker
-      - messaging
-    config:
-      mysql: {{ services.mysql }}
-    node:
-      dockerfile: Overriden
-
 plugins:
   migrations:
     path: stretch/plugins/migrations
+    encrypted_data: !encrypted data.key.encrypted_data
+
+local_nodes:
+  conf1:
+    includes:
+      - web
+      - worker
+      - messaging
+    dockerfile: ../Dockerfile
+
+  conf2:
+    includes:
+      - web
+      - worker
+      - messaging
+    files: files
+    templates: templates
+    base_images: ../stretch/base
+
+
+# ====== /secrets.yml ====== #
+data:
+  key:
     encrypted_data: !encrypted |-
       deadbeef
+
+
+# ====== /config.yml ====== #
+config:
+  mysql: {{ services.mysql }}
+  key:
+    thing: !encrypted data.key.encrypted_data
+
+local_config:
+  conf1:
+    includes:
+      - web
+      - worker
+      - messaging
+    a: 2
+  conf2:
+    includes:
+      - web
+      - worker
+      - messaging
+    b: 3
 
 # ====== /web/stretch.yml ====== #
 node:
@@ -43,5 +63,25 @@ node:
   templates: templates
   base_images: ../stretch/base
 
+plugins:
+  grunt:
+    options:
+      foo: bar
+
+# ====== /web/secrets.yml ====== #
+data:
+  key:
+    encrypted_data: !encrypted |-
+      other encrypted data
+
+# ====== /web/config.yml ====== #
 config:
   rabbitmq: {{ services.rabbitmq }}
+
+# containers/base/container.yml #
+dockerfile: Dockerfile  # default
+container_name: base
+
+# node_1/container.yml #
+dockerfile: Dockerfile  # default
+from: ../containers/base/container.yml
