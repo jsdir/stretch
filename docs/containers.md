@@ -21,7 +21,7 @@ from: ../relative/path/to/the/base/image/container.yml
 The `files` directory should contain all static files that will be added to the container.
 
 #### templates/
-The `templates` directory should contain all template files that will be deployed to the container. All template files should be jinja templates. These templates will be compiled with the [Environment Context](template_contexts.md). No extra file extension should be used because the files will be compiled in place.
+The `templates` directory should contain all template files that will be deployed to the container. All template files should be jinja templates. These templates will be compiled with the [Application Context](template_contexts.md). No extra file extension should be used because the files will be compiled in place. The template compilation process is perfomed by the [Stretch Agent](agent.yml).
 
 #### app/
 The `app` directory should contain the core application for the container. Since the `app` directory is added into the docker container, every time the conatiner is restarted, the `app` directory is reset. Because of this, nothing in this directory should be expected to persist. This is not a place for databases or any other form of changing data.
