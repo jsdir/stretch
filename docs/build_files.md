@@ -30,12 +30,15 @@ For individual node declaration, the node is defined in the source root. All thr
 `stretch.yml` defines data used for the build step of the Stretch Pipeline.
 
 ```yaml
+name: web
 container: path/to/container.yml
 
 plugins:
     plugin_name:
         option: value
 ```
+
+- `name` defines the name of the node.
 
 - `container` defines the [Container](container.md) that the node should use. By default, the value is `container/container.yml`.
 

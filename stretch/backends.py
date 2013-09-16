@@ -6,6 +6,7 @@ from celery.contrib.methods import task
 from django.conf import settings
 from stretch.utils import wheel_client
 from stretch.api import models
+from stretch import utils
 
 
 class Backend(object):
@@ -71,7 +72,7 @@ class RackspaceBackend(Backend):
         run('/bin/bash /root/bootstrap.sh')
 
     def create_host(self):
-        hostname = 'node-%s' % self.generate_name(8)
+        hostname = 'node-%s' % utils.generate_random_hex(8)
         server = self.cs.servers.create(hostname, self.image.id,
                                         self.flavor.id)
         pyrax.utils.wait_for_build(server, interval=10)
@@ -105,7 +106,3 @@ class RackspaceBackend(Backend):
             for server in self.cs.list():
                 if server.name == host.hostname:
                     server.delete()
-
-    def generate_name(length):
-        hexdigits = '0123456789abcdef'
-        return ''.join(random.choice(hexdigits) for _ in xrange(length))

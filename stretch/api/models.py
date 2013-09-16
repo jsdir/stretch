@@ -1,3 +1,7 @@
+import os.path
+import shutils
+import json
+import tarfile
 from django.db import models
 from django_enumfield import enum
 from django.contrib.contenttypes.models import ContentType
@@ -18,8 +22,13 @@ class AuditedModel(models.Model):
 
 
 class Release(AuditedModel):
-    tag = models.TextField(unique=True)
-    ref = models.CharField('SHA', max_length=255)
+    name = models.TextField(unique=True)
+    sha = models.CharField('SHA', max_length=40)
+
+    def __init__(self):
+        self.name = utils.generate_memorable_name()
+        self.sha = utils.generate_random_hex(40)
+
 
     @classmethod
     def create_from_sources(cls, sources):
@@ -31,16 +40,54 @@ class Release(AuditedModel):
         }
         """
 
+        # Create release
+        release = cls()
+
+        # Create buffers
+        buffers = {}
+        for name in ('release', 'source'):
+            buffer_path = os.path.join(settings.TEMP_DIR, release.sha, name)
+            if os.path.isdir(buffer_path):
+                shutils.rmtree(buffer_path)
+            utils.makedirs(buffer_path)
+            buffers[name] = buffer_path
+
+        # Pull from sources
+        source_config = {}
+
         # Acquire lock
-        lock = utils.lock('source_pull')
+        lock = utils.lock('source')
         with lock:
             for source, pull_options in sources:
                 source.pull(pull_options)
-                nodes = parser.get_nodes(source.get_path())
-                # TODO: merge multiple sources
-            config = Configuration.from_json(nodes)
+                source_path = source.get_path()
 
-        release = cls()
+                # Copy source into source buffer
+                dir_util.copy_tree(source_path, buffers['source'])
+
+                # Create BuildParser
+                source = parser.SourceParser(buffers['source'])
+
+                # Compile and merge release configuration
+                utils.update(source_config, source.get_combined_config())
+
+                # Merge to release buffer
+                source.copy_to_buffer(buffers['release'])
+
+        # Archive the release
+        release_dir = os.path.join(setting.DATA_DIR, 'releases', release.sha)
+        utils.makedirs(release_dir)
+
+        # Write release configuration
+        with open(os.path.join(release_dir, '%s.conf' % release.sha)) as f:
+            f.write(json.dumps(source_config))
+
+        # Tar release buffer
+        tar_path = os.path.join(release_dir, '%s.tar.gz' % release.sha)
+        tar_file = tarfile.open(tar_path, 'w:gz')
+        tar_file.add(buffers['release'])
+        tar_file.close()
+
         release.save()
 
         # Push release to all auto-deploying environments

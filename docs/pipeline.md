@@ -19,7 +19,7 @@ The stages of the build step:
 
 ### Pull from sources
 
-Code is pulled from all defined sources and placed in a temporary folder called the buffer. Sources overwrite each other based on source priority. Source priority is determined by the order of source declaration in the stretch configuration. Sources defined later override sources defined earlier.
+Code is pulled from all defined sources and placed in a temporary buffer folder. Sources overwrite each other based on source priority. Source priority is determined by the order of source declaration in the stretch configuration. Sources defined later override sources defined earlier.
 
 ### Decrypt
 

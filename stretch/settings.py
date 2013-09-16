@@ -214,6 +214,8 @@ SOURCES = {}
 BACKEND = {}
 CACHE_DIR = '/var/cache/stretch'
 LOCK_DIR = '/var/lock/stretch'
+TEMP_DIR = '/tmp/stretch'
+DATA_DIR = '/var/lib/stretch'
 DOMAIN_NAME = None
 SALT_CONF_PATH = '/etc/salt'
 

@@ -2,6 +2,8 @@ import os
 import errno
 import importlib
 import lockfile
+import string
+import random
 import salt.client
 import salt.config
 import salt.wheel
@@ -28,6 +30,70 @@ def makedirs(path):
 def lock(name):
     lock_dir = settings.LOCK_DIR
     return lockfile.FileLock(os.path.join(lock_dir, '%s.lock' % name))
+
+
+def generate_random_hex(length=16):
+    hexdigits = '0123456789abcdef'
+    return ''.join(random.choice(hexdigits) for _ in xrange(length))
+
+
+def update(d, u):
+    """
+    Recursively merge dict-like objects.
+    """
+    for k, v in u.iteritems():
+        if isinstance(v, collections.Mapping):
+            r = update(d.get(k, {}), v)
+            d[k] = r
+        else:
+            d[k] = u[k]
+    return d
+
+
+def generate_memorable_name():
+    """
+    Return a randomly-generated memorable name.
+    """
+    adjectives = [
+        'afternoon', 'aged', 'ancient', 'autumn', 'billowing',
+        'bitter', 'black', 'blue', 'bold', 'broken',
+        'calm', 'caring', 'cold', 'cool', 'crimson',
+        'damp', 'dark', 'dawn', 'delicate', 'divine',
+        'dry', 'empty', 'ephemeral', 'evening', 'falling',
+        'fathomless', 'floral', 'fragrant', 'frosty', 'golden',
+        'green', 'hidden', 'holy', 'icy', 'imperfect',
+        'impermanent', 'late', 'lingering', 'little', 'lively',
+        'long', 'majestic', 'mindful', 'misty', 'morning',
+        'muddy', 'nameless', 'noble', 'old', 'patient',
+        'polished', 'proud', 'purple', 'quiet', 'red',
+        'restless', 'rough', 'shy', 'silent', 'silvery',
+        'slender', 'small', 'smooth', 'snowy', 'solitary',
+        'sparkling', 'spring', 'stately', 'still', 'strong',
+        'summer', 'timeless', 'twilight', 'unknowable', 'unmovable',
+        'upright', 'wandering', 'weathered', 'white', 'wild',
+        'winter', 'wispy', 'withered', 'young',
+    ]
+    nouns = [
+        'bird', 'breeze', 'brook', 'brook', 'bush',
+        'butterfly', 'chamber', 'chasm', 'cherry', 'cliff',
+        'cloud', 'darkness', 'dawn', 'dew', 'dream',
+        'dust', 'eye', 'feather', 'field', 'fire',
+        'firefly', 'flower', 'foam', 'fog', 'forest',
+        'frog', 'frost', 'glade', 'glitter', 'grass',
+        'hand', 'haze', 'hill', 'horizon', 'lake',
+        'leaf', 'lily', 'meadow', 'mist', 'moon',
+        'morning', 'mountain', 'night', 'paper', 'pebble',
+        'pine', 'planet', 'plateau', 'pond', 'rain',
+        'resonance', 'ridge', 'ring', 'river', 'sea',
+        'shadow', 'shape', 'silence', 'sky', 'smoke',
+        'snow', 'snowflake', 'sound', 'star', 'stream',
+        'sun', 'sun', 'sunset', 'surf', 'thunder',
+        'tome', 'tree', 'violet', 'voice', 'water',
+        'waterfall', 'wave', 'wave', 'wildflower', 'wind',
+        'wood',
+    ]
+    return '%s-%s-%s' % (random.choice(adjectives), random.choice(nouns),
+                         generate_random_hex(4))
 
 
 salt_master_config = salt.config.master_config(settings.SALT_CONF_PATH)
