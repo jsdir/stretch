@@ -3,7 +3,7 @@
 Stretch uses docker containers for shipping application releases from source to backend. They are an important part of the [Stretch Pipeline](pipeline.md). Docker containers in stretch are usually defined with a `container.yml`, `files` directory, `templates` directory, `app` directory, and a standard `Dockerfile`.
 
 #### container.yml
-The `Dockerfile` is the standard way to automate the container-building process. However, it lacks the abstraction needed for use in stretch. The `container.yml` file complements the `Dockerfile` by giving supplying the official container name along with the location of any image the container depends upon.
+The `Dockerfile` is the standard way to automate the container-building process. However, it lacks the abstraction needed for use in stretch. The `container.yml` file complements the `Dockerfile` by giving supplying the official container name along with the location of any image the container depends upon. The `Dockerfile` used for the build should be included in the same directory as the `container.yml`.
 
 ```yaml
 dockerfile: Dockerfile
@@ -43,17 +43,17 @@ Using this source:
 
 Here is a common template for `Dockerfile`s used with stretch:
 
-.. code-block:: bash
+```bash
+FROM system_name/base
+# or FROM <image>:<tag>
 
-    FROM system_name/base
-    # or FROM <image>:<tag>
+# Install requirements
+RUN apt-get update
 
-    # Install requirements
-    RUN apt-get update
+ADD files /home/stretch/files
+ADD app /home/stretch/app
 
-    ADD files /home/stretch/files
-    ADD app /home/stretch/app
+# Link different files to different locations
 
-    # Link different files to different locations
-
-    # Run application
+# Run application
+```

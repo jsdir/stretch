@@ -63,10 +63,8 @@ As shown above with the `mysql` and `rabbitmq` keys, `config.yml` can written as
 
 ```yaml
 passwords:
-    app_password: !encrypted |-
-        = encrypted password =
-    foo_password: !encrypted |-
-        = another encrypted password =
+    app_password: = encrypted password =
+    foo_password: = another encrypted password =
 ```
 
 ### Multiple Node Declaration
