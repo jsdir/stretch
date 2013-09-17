@@ -21,19 +21,26 @@ class AuditedModel(models.Model):
         abstract = True
 
 
+class System(models.Model):
+    # TODO: alphanumeric (variable name)
+    name = models.TextField(unique=True)
+
+
 class Release(AuditedModel):
     name = models.TextField(unique=True)
     sha = models.CharField('SHA', max_length=40)
+    system = models.ForeignKey(System)
 
-    def __init__(self):
+    def __init__(self, system):
         self.name = utils.generate_memorable_name()
         self.sha = utils.generate_random_hex(40)
+        self.system = system
 
 
     @classmethod
-    def create_from_sources(cls, sources):
+    def create_from_sources(cls, system, sources):
         """
-        Release.create_from_sources({git_source: {'ref': new_ref}})
+        Release.create_from_sources(<System>, {git_source: {'ref': new_ref}})
 
         sources = {
             <Source>: {'ref': 'someref'},
@@ -41,7 +48,7 @@ class Release(AuditedModel):
         """
 
         # Create release
-        release = cls()
+        release = cls(system)
 
         # Create buffers
         buffers = {}
@@ -68,6 +75,9 @@ class Release(AuditedModel):
                 # Create BuildParser
                 source = parser.SourceParser(buffers['source'])
 
+                # Decrypt
+                source.decrypt_secrets()
+
                 # Compile and merge release configuration
                 utils.update(source_config, source.get_combined_config())
 
@@ -87,6 +97,10 @@ class Release(AuditedModel):
         tar_file = tarfile.open(tar_path, 'w:gz')
         tar_file.add(buffers['release'])
         tar_file.close()
+
+        # Build docker images
+        release_source = parser.SourceParser(buffers['release'])
+        release_source.build_and_push(release.system, release.sha)
 
         release.save()
 
@@ -140,6 +154,7 @@ class Environment(models.Model):
     release = models.ForeignKey(Release)
     auto_deploy = models.BooleanField(default=False)
     hosts = generic.GenericRelation(Host)
+    system = models.ForeignKey(System)
     
     def deploy(self, release):
         result = self.deploy_task.delay(release)
@@ -186,6 +201,7 @@ class Environment(models.Model):
 
 class Node(models.Model):
     node_type = models.TextField(unique=True)
+    system = models.ForeignKey(System)
 
 
 class NodeInstance(models.Model):
