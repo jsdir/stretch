@@ -24,7 +24,8 @@ class Node(object):
         self.secrets = build_files.get('secrets')
         self.config = build_files.get('config')
 
-        data = get_data(self.stretch)
+        secrets = get_data(self.secrets)
+        data = get_data(self.stretch, secrets)
 
         if not self.name:
             # Get name for individual node
@@ -69,6 +70,16 @@ class Node(object):
 
         docker_client.build(path, tag)
         return tag
+
+
+class Plugin(object):
+    def __init__(self, name, options, path):
+        self.name = name
+        self.options = options
+        self.path = path
+
+    def run(self):
+        pass
 
 
 class SourceParser(object):
@@ -173,6 +184,41 @@ class SourceParser(object):
     def build_and_push(self, sha):
         [node.build_and_push(sha) for node in self.nodes]
 
+    def run_build_plugins(self):
+        plugins = []
+        local_stretch = None
+
+        if self.multiple_nodes:
+            secrets = get_data(self.global_files.get('secrets'))
+            data = get_data(self.global_files.get('stretch'), secrets)
+
+            global_plugins = data.get('plugins')
+
+            if global_plugins:
+                for name, options in global_plugins.iteritems():
+                    plugins.append(Plugin(name, options, self.path))
+
+            local_stretch = data.get('local_stretch')
+
+        for node in self.nodes:
+            node_plugins = {}
+
+            if local_stretch:
+                for conf in local_stretch.values():
+                    local_plugins = conf.get('plugins')
+                    includes = conf.get('includes')
+                    if includes and local_plugins and node.name in includes:
+                        utils.update(node_plugins, local_plugins)
+
+            if node.plugins:
+                update(node_plugins, node.plugins)
+
+            for name, options in node_plugins.iteritems():
+                plugins.append(Plugin(name, options, node.path))
+
+        # Run all build plugins
+        [plugin.run() for plugin in plugins if plugin.build]
+
 
 def parse_node(path):
     build_files = {}
@@ -199,8 +245,47 @@ def read_file(path):
         return source.read()
 
 
-def get_data(path):
+def get_dotted_key_value(key, data):
+    try:
+        keys = key.split('.')
+        data_key = keys.pop(0)
+
+        if isinstance(data, dict):
+            new_data = data[data_key]
+        else:
+            raise KeyError
+
+        if keys:
+            return get_dotted_key_value('.'.join(keys), new_data)
+        else:
+            return new_data
+
+    except KeyError:
+        # TODO: logger
+        print 'Key not found in data.'
+        return None
+
+
+def get_data(path, secrets=None):
+
+    def null_constructor(loader, node):
+        return None
+
+    def secret_constructor(secrets):
+
+        def constructor(loader, node):
+            key = loader.construct_scalar(node)
+            result = get_dotted_key_value(key, secrets) or 'None'
+            return result
+
+        return constructor
+
     data = None
     if os.path.exists(path):
+        if secrets:
+            constructor = secret_constructor(secrets)
+        else:
+            constructor = null_constructor
+        yaml.add_constructor('!secret', constructor)
         data = yaml.load(read_file(path))
     return data

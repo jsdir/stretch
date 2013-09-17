@@ -102,6 +102,9 @@ class Release(AuditedModel):
         release_source = parser.SourceParser(buffers['release'])
         release_source.build_and_push(release.system, release.sha)
 
+        # Run build plugins
+        release_source.run_build_plugins()
+
         release.save()
 
         # Push release to all auto-deploying environments
