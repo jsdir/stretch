@@ -7,6 +7,7 @@ import docker
 from distutils import dir_util
 
 from stretch import utils
+from stretch.plugins import create_plugin
 
 
 docker_client = docker.Client(base_url='unix://var/run/docker.sock',
@@ -70,16 +71,6 @@ class Node(object):
 
         docker_client.build(path, tag)
         return tag
-
-
-class Plugin(object):
-    def __init__(self, name, options, path):
-        self.name = name
-        self.options = options
-        self.path = path
-
-    def run(self):
-        pass
 
 
 class SourceParser(object):
@@ -196,7 +187,7 @@ class SourceParser(object):
 
             if global_plugins:
                 for name, options in global_plugins.iteritems():
-                    plugins.append(Plugin(name, options, self.path))
+                    plugins.append(create_plugin(name, options, self.path))
 
             local_stretch = data.get('local_stretch')
 
@@ -214,10 +205,10 @@ class SourceParser(object):
                 update(node_plugins, node.plugins)
 
             for name, options in node_plugins.iteritems():
-                plugins.append(Plugin(name, options, node.path))
+                plugins.append(create_plugin(name, options, node.path))
 
         # Run all build plugins
-        [plugin.run() for plugin in plugins if plugin.build]
+        [plugin.build() for plugin in plugins]
 
 
 def parse_node(path):
