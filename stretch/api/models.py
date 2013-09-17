@@ -52,8 +52,9 @@ class Release(AuditedModel):
 
         # Create buffers
         buffers = {}
+        release_buffer_path = os.path.join(settings.TEMP_DIR, release.sha)
         for name in ('release', 'source'):
-            buffer_path = os.path.join(settings.TEMP_DIR, release.sha, name)
+            buffer_path = os.path.join(release_buffer_path, name)
             if os.path.isdir(buffer_path):
                 shutils.rmtree(buffer_path)
             utils.makedirs(buffer_path)
@@ -104,6 +105,9 @@ class Release(AuditedModel):
 
         # Run build plugins
         release_source.run_build_plugins()
+
+        # Clear buffers
+        shutils.rmtree(release_buffer_path)
 
         release.save()
 
