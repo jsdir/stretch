@@ -40,13 +40,12 @@ class Release(AuditedModel):
     @classmethod
     def create_from_sources(cls, system, sources):
         """
-        Release.create_from_sources(<System>, {git_source: {'ref': new_ref}})
+        Release.create_from_sources(system, {git_source: {'ref': new_ref}})
 
         sources = {
             <Source>: {'ref': 'someref'},
         }
         """
-
         # Create release
         release = cls(system)
 
@@ -86,7 +85,7 @@ class Release(AuditedModel):
                 source.copy_to_buffer(buffers['release'])
 
         # Archive the release
-        release_dir = os.path.join(setting.DATA_DIR, 'releases', release.sha)
+        release_dir = os.path.join(settings.DATA_DIR, 'releases', release.sha)
         utils.makedirs(release_dir)
 
         # Write release configuration
@@ -96,7 +95,7 @@ class Release(AuditedModel):
         # Tar release buffer
         tar_path = os.path.join(release_dir, '%s.tar.gz' % release.sha)
         tar_file = tarfile.open(tar_path, 'w:gz')
-        tar_file.add(buffers['release'])
+        tar_file.add(buffers['release'], '/')
         tar_file.close()
 
         # Build docker images
@@ -168,14 +167,106 @@ class Environment(models.Model):
         deploy = Deploy(release=release, target=self, task_id=result.id)
         deploy.save()
 
-    @task()
+    @task
     def deploy_task(self, release):
-        old_release = self.release
+        existing_release = self.release
         new_release = release
+        total_steps = 7
 
+        # Pull release
         current_task.update_state(state='PROGRESS',
-            meta={'current': 1, 'total': 2})
+            meta={
+                'description': 'Pulling release',
+                'current': 1,
+                'total': total_steps
+            }
+        )
 
+        # Create environment buffers
+        buffers = {}
+        env_buffer_path = os.path.join(settings.TEMP_DIR,
+                                       systems,
+                                       self.system.name,
+                                       self.name)
+
+        def pull_release(release, path):
+            sha = release.sha
+            release_dir = os.path.join(settings.DATA_DIR, 'releases', sha)
+            tar_path = os.path.join(release_dir, '%s.tar.gz' % sha)
+            tar_file = tarfile.open(tar_path)
+            tar_file.extractall(path)
+            tar_file.close()
+
+        # Setup existing release buffer
+        buffers['existing'] = os.path.join(env_buffer_path, 'existing')
+        utils.makedirs(buffers['existing'])
+        if existing_release and not os.listdir(buffers['existing']):
+            # Pull existing release
+            pull_release(existing_release, buffers['existing'])
+
+        # Setup new release buffer
+        buffers['new'] = os.path.join(env_buffer_path, 'new')
+        if os.path.exists(buffers['new']):
+            shutil.rmtree(buffers['new'])
+        utils.makedirs(buffers['new'])
+        # Pull existing release
+        pull_release(new_release, buffers['new'])
+
+        # Run pre-deploy plugins
+        current_task.update_state(state='PROGRESS',
+            meta={
+                'description': 'Running pre-deploy plugins',
+                'current': 2,
+                'total': total_steps
+            }
+        )
+
+        # Pull release configuration
+        current_task.update_state(state='PROGRESS',
+            meta={
+                'description': 'Pulling release configuration',
+                'current': 3,
+                'total': total_steps
+            }
+        )
+
+        # Push images and configurations to nodes
+        current_task.update_state(state='PROGRESS',
+            meta={
+                'description': 'Pushing images and configurations to nodes',
+                'current': 4,
+                'total': total_steps
+            }
+        )
+
+        # Change release
+        current_task.update_state(state='PROGRESS',
+            meta={
+                'description': 'Changing release',
+                'current': 5,
+                'total': total_steps
+            }
+        )
+
+        # Switch buffers
+        current_task.update_state(state='PROGRESS',
+            meta={
+                'description': 'Switching buffers',
+                'current': 6,
+                'total': total_steps
+            }
+        )
+
+        # Run post-deploy plugins
+        current_task.update_state(state='PROGRESS',
+            meta={
+                'description': 'Running post-deploy plugins',
+                'current': 7,
+                'total': total_steps
+            }
+        )
+
+        """
         if old_release:
             for plugin_application in old_release.plugin_applications:
                 # Plugin applications need precedence
@@ -190,6 +281,7 @@ class Environment(models.Model):
             # Plugin applications need some sort of precedence
             plugin = plugins.get_objects.get(plugin_application.plugin_name)
             plugin.after_release_change(old_release, new_release, self)
+        """
 
     def add_host(self, node):
         host = backend.create_host()
@@ -266,7 +358,6 @@ class Group(models.Model):
     @property
     def host_count(self):
         return self.hosts.count()
-
 
 """
 class Trigger(models.Model):
