@@ -52,7 +52,7 @@ def update(d, u):
     return d
 
 
-def render_template(path, contexts=[]):
+def render_template_to_file(path, contexts=[]):
     context = {}
     [update(context, c) for c in contexts]
     directory, file_name = os.path.split(path)
@@ -61,6 +61,12 @@ def render_template(path, contexts=[]):
     data = env.get_template(file_name).render(context)
     with open(path, 'w') as f:
         f.write(data)
+
+
+def render_template(data, contexts=[]):
+    context = {}
+    [update(context, c) for c in contexts]
+    return jinja2.Template(data).render(context)
 
 
 def generate_memorable_name():

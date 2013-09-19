@@ -80,13 +80,13 @@ class Release(AuditedModel):
                 dir_util.copy_tree(source_path, buffers['source'])
 
                 # Create BuildParser
-                source = parser.SourceParser(buffers['source'], release)
+                source = parser.SourceParser(buffers['source'], release, True)
 
                 # Decrypt
                 source.decrypt_secrets()
 
                 # Compile and merge release configuration
-                utils.update(source_config, source.get_combined_config())
+                utils.update(source_config, source.get_release_config())
 
                 # Merge to release buffer
                 source.copy_to_buffer(buffers['release'])
@@ -96,7 +96,7 @@ class Release(AuditedModel):
         utils.makedirs(release_dir)
 
         # Write release configuration
-        with open(os.path.join(release_dir, '%s.conf' % release.sha)) as f:
+        with open(os.path.join(release_dir, '%s.json' % release.sha)) as f:
             f.write(json.dumps(source_config))
 
         # Tar release buffer
@@ -179,13 +179,21 @@ class Environment(models.Model):
 
         total_steps = 7
 
-        def pull_release(release, path):
+        def pull_release(release, path, pull_conf=False):
             sha = release.sha
             release_dir = os.path.join(settings.DATA_DIR, 'releases', sha)
             tar_path = os.path.join(release_dir, '%s.tar.gz' % sha)
             tar_file = tarfile.open(tar_path)
             tar_file.extractall(path)
             tar_file.close()
+
+            data = None
+            if pull_conf:
+                conf_path = os.path.join(release_dir, '%s.json' % sha)
+                with open(conf_path) as conf_file:
+                    data = json.loads(conf_file.read())
+
+            return data
 
         def update_status(current, description):
             current_task.update_state(state='PROGRESS',
@@ -221,8 +229,9 @@ class Environment(models.Model):
         if os.path.exists(buffers['new']):
             shutil.rmtree(buffers['new'])
         utils.makedirs(buffers['new'])
-        # Pull existing release
-        pull_release(new_release, buffers['new'])
+
+        # Pull new release
+        release_config = pull_release(new_release, buffers['new'], True)
 
         # Parse sources
         new_source = parser.SourceParser(buffers['new'], new_release)
@@ -235,8 +244,11 @@ class Environment(models.Model):
         update_status(2, 'Running pre-deploy plugins')
         new_source.run_pre_deploy_plugins(existing_source, self)
 
-        # Pull release configuration
-        update_status(3, 'Pulling release configuration')
+        # Parse release configuration
+        update_status(3, 'Parsing release configuration')
+        node_configs = parser.parse_release_config(release_config,
+                                                   new_release,
+                                                   existing_release, self)
 
         # Push images and configurations to nodes
         update_status(4, 'Pushing images and configurations to nodes')

@@ -6,7 +6,7 @@ import gnupg
 import docker
 from distutils import dir_util
 
-from stretch import utils
+from stretch import utils, contexts
 from stretch.plugins import create_plugin
 
 
@@ -26,8 +26,9 @@ class Node(object):
         self.secrets = build_files.get('secrets')
         self.config = build_files.get('config')
 
-        secrets = get_data(self.secrets)
-        data = get_data(self.stretch, secrets)
+    def finalize(self):
+        self.secret_data = get_data(self.secrets) or {}
+        data = get_data(self.stretch, self.secret_data)
 
         if not self.name:
             # Get name for individual node
@@ -75,11 +76,17 @@ class Node(object):
 
 
 class SourceParser(object):
-    def __init__(self, path, release=None):
+    def __init__(self, path, release=None, decrypt_secrets=False):
         self.path = path
         self.release = release
         self.nodes = []
         self.parse()
+
+        if decrypt_secrets:
+            self.decrypt_secrets()
+
+        self.finalize_nodes()
+        self.load_secrets()
         self.load_plugins()
 
     def parse(self):
@@ -100,13 +107,19 @@ class SourceParser(object):
             self.multiple_nodes = False
             self.nodes.append(Node(self.path, '/'))
 
+    def finalize_nodes(self):
+        [node.finalize() for node in self.nodes]
+
+    def load_secrets(self):
+        if self.multiple_nodes:
+            self.secret_data = get_data(self.global_files.get('secrets')) or {}
+
     def load_plugins(self):
         self.plugins = []
         local_stretch = None
 
         if self.multiple_nodes:
-            secrets = get_data(self.global_files.get('secrets'))
-            data = get_data(self.global_files.get('stretch'), secrets)
+            data = get_data(self.global_files.get('stretch'), self.secret_data)
 
             global_plugins = data.get('plugins')
 
@@ -169,35 +182,53 @@ class SourceParser(object):
         with open(path, 'w') as source:
             yaml.dump(decrypted_data, source)
 
-    def get_combined_config(self):
+    def get_release_config(self):
         """
         If individual:
-            Returns: {node_name: config_source}
+            Returns: {
+                nodes: {
+                    node_name: {
+                        config: config_source,
+                        secrets: secrets
+                    }
+                }
+            }
         If multiple:
             Returns: {
-                global: config_source,
+                global: {
+                    config: config_source,
+                    secrets: secrets
+                },
                 nodes: {
-                    node_name: config_source,
-                    node_name: config_source
+                    node_name: {
+                        config: config_source,
+                        secrets: secrets
+                    },
+                    node_name: {
+                        config: config_source,
+                        secrets: secrets
+                    }
                 }
             }
         """
         config = {}
 
         if self.multiple_nodes:
+            config['global'] = {
+                'config': '',
+                'secrets': self.secret_data
+            }
             root_config = self.global_files.get('config')
             if root_config:
-                config['global'] = read_file(root_config)
+                config['global']['config'] = read_file(root_config)
 
-            config['nodes'] = {}
-            for node in self.nodes:
-                if node.config:
-                    config['nodes'][node.name] = read_file(node.config)
-
-        else:
-            node = self.nodes[0]
+        for node in self.nodes:
+            config['nodes'][node.name] = {
+                'config': '',
+                'secrets': node.secret_data
+            }
             if node.config:
-                config[node.name] = read_file(node.config)
+                config['nodes'][node.name]['config'] = read_file(node.config)
 
         return config
 
@@ -271,7 +302,7 @@ def get_dotted_key_value(key, data):
         return None
 
 
-def get_data(path, secrets=None):
+def load_yaml_data(data, secrets=None):
 
     def null_constructor(loader, node):
         return None
@@ -285,12 +316,54 @@ def get_data(path, secrets=None):
 
         return constructor
 
+    if secrets:
+        constructor = secret_constructor(secrets)
+    else:
+        constructor = null_constructor
+    yaml.add_constructor('!secret', constructor)
+
+    return yaml.load(data)
+
+
+def get_data(path, secrets=None):
     data = None
     if os.path.exists(path):
-        if secrets:
-            constructor = secret_constructor(secrets)
-        else:
-            constructor = null_constructor
-        yaml.add_constructor('!secret', constructor)
-        data = yaml.load(read_file(path))
+        data = load_yaml_data(read_file(path))
     return data
+
+
+def parse_release_config(config, new_release, existing_release, environment):
+    # TODO: use in SourceParser.load_plugins, refactor
+
+    def get_config(data):
+        secrets = data.get('secrets')
+        contexts = [contexts.create_deploy_context(new_release,
+            existing_release, environment)]
+        config = utils.render_template(data.get('config'), contexts)
+        return load_yaml_data(config, secrets)
+
+    result = {}
+    global_data = config.get('global')
+
+    if global_data:
+        config_file = get_config(global_data)
+        global_config = config_file.get('config') or {}
+
+        for block in (config_file.get('local_config') or {}).iteritems():
+            for include in (block.get('includes') or []):
+                node_config = {}
+                utils.update(node_config, global_config)
+                utils.update(node_config, (block.get('config') or {})))
+                result[include] = node_config
+
+    for name, data in config.get('nodes').iteritems():
+        node_config = {}
+        update(node_config, global_config)
+        update(node_config, (get_config(data) or {}))
+
+        if result.has_key(name):
+            update(result[name], node_config)
+        else:
+            result[name] = node_config
+
+    return result

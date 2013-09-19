@@ -5,7 +5,7 @@ from subprocess import call
 from django.conf import settings
 from functools import reduce
 
-from stretch import utils
+from stretch import utils, contexts
 
 
 log = logging.getLogger(__name__)
@@ -52,18 +52,6 @@ class Plugin(object):
 
     def post_deploy(self, new_source, existing_source, environment):
         log.debug('%s post_deploy hook triggered' % self)
-
-
-class ServicesContext(object):
-    def __init__(self, environment):
-        self.services = environment.system.services
-
-    def __getattribute__(self, attr):
-        data = None
-        service = self.services.objects.get(name=attr)
-        if service:
-            data = service.data
-        return data
 
 
 class MigrationsPlugin(Plugin):
@@ -117,17 +105,15 @@ class MigrationsPlugin(Plugin):
         # Parse database.json
         database_file_path = os.path.join(migrations_path, 'database.json')
 
-        contexts = [{
-            'services': ServicesContext(environment),
-            'environment': environment,
-            'release': new_release,
-            'existing_release': existing_release
-        }]
+        # Render template
+        contexts = [contexts.create_deploy_context(new_release,
+            existing_release, environment)]
+
         context = self.options.get('context')
         if context:
             contexts.append(context)
 
-        utils.render_template(database_file_path, contexts=contexts)
+        utils.render_template_to_file(database_file_path, contexts=contexts)
 
         os.chdir(migrations_path)
         self.env.call_npm(['install'])
@@ -191,8 +177,16 @@ class GruntPlugin(Plugin):
 
         # Parse Gruntfile
         grunt_file_path = os.path.join(grunt_path, grunt_file)
+
+        # Render template
+        contexts = [contexts.create_deploy_context(new_release,
+            existing_release, environment)]
+
+        context = self.options.get('context')
         if context:
-            utils.render_template(grunt_file_path, contexts=[context])
+            contexts.append(context)
+
+        utils.render_template_to_file(grunt_file_path, contexts=[context])
 
         # Run grunt build task
         os.chdir(grunt_file_path)
