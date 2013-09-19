@@ -3,7 +3,7 @@ import logging
 import virtualenv
 from subprocess import call
 from django.conf import settings
-import jinja2
+from functools import reduce
 
 from stretch import utils
 
@@ -36,9 +36,10 @@ class NodePluginEnvironment(PluginEnvironment):
 
 
 class Plugin(object):
-    def __init__(self, options, path):
+    def __init__(self, options, path, relative_path):
         self.options = options
         self.path = path
+        self.relative_path = relative_path
 
     def setup(self):
         raise NotImplementedError
@@ -46,15 +47,18 @@ class Plugin(object):
     def build(self):
         log.debug('%s build hook triggered' % self)
 
-    def before_release_change(self, old_release, new_release, env):
-        log.debug('%s before_release_change hook triggered' % self)
+    def pre_deploy(self, new_source, existing_source):
+        log.debug('%s pre_deploy hook triggered' % self)
 
-    def after_release_change(self, old_release, new_release, env):
-        log.debug('%s after_release_change hook triggered' % self)
+    def post_deploy(self, new_source, existing_source):
+        log.debug('%s post_deploy hook triggered' % self)
 
 
 class MigrationsPlugin(Plugin):
-
+    """
+    path:    path containing the migrations
+    context: context to pass to database.json
+    """
     name = 'migrations'
 
     def __init__(self):
@@ -64,23 +68,73 @@ class MigrationsPlugin(Plugin):
     def setup(self):
         if not self.is_setup:
             self.env = NodePluginEnvironment(self.name, None)
-            self.env.install_package('db-migrate', '0.5.4')
+            self.env.install_package('db-migrate', '0.5.4', ['-g'])
             self.is_setup = True
 
-    def before_release_change(self, old_release, new_release, env):
+    def pre_deploy(self, new_source, existing_source):
+        # Migrations are done before releases are rolled out
+        super(MigrationsPlugin, self).pre_deploy(self, new_source,
+                                                 existing_source)
         self.setup()
 
-        # Migrations are done before releases are rolled out
-        super(MigrationsPlugin, self).before_release_change(old_release,
-            new_release, env)
+        new_release = new_source.release
+        existing_release = None
+        if existing_source:
+            existing_release = existing_source.release
 
-        # Use the newer release for the more extensive migration data
-        if old_release.created_at > new_release.created_at:
-            release = old_release
+        if (not existing_release or
+                new_release.created_at > existing_release.created_at):
+            self.migrate(self, new_release, existing_release)
         else:
-            release = new_release
+            existing_plugin = None
+            for plugin in existing_release.plugins:
+                if (plugin.name == self.name and
+                    plugin.relative_path == self.relative_path):
+                    existing_plugin = plugin
 
-        release
+            if existing_plugin:
+                self.migrate(existing_plugin, new_release, existing_release)
+            else:
+                # TODO: logger
+                print "Exsiting release plugin not found. Skipping."
+
+    def migrate(self, plugin, new_release, existing_release):
+        migrations_path = self.get_migrations_path(plugin)
+
+        # Parse database.json
+        database_file_path = os.path.join(migrations_path, 'database.json')
+        contexts = [{
+            'services': None,
+            'environment': None,
+            'release': new_release,
+            'existing_release': existing_release
+        }]
+        context = self.options.get('context')
+        if context:
+            contexts.append(context)
+        utils.render_template(database_file_path, contexts=contexts)
+
+        os.chdir(migrations_path)
+        self.env.call_npm(['install'])
+
+        if plugin == self:
+            call(['db-migrate', '-e', 'stretch', 'up'])
+        else:
+            new_migrations_path = self.get_migrations_path(self)
+            migrations = os.listdir(os.path.join(new_migrations_path,
+                                                 'migrations'))
+            migration_file = reduce(migrations, self.get_later_migration)
+            call(['db-migrate', '-e', 'stretch', 'down', migration_file])
+
+    def get_migrations_path(self, plugin):
+        path = plugin.options.get('path') or '.'
+        return os.path.join(plugin.path, path)
+
+    def get_later_migration(self, x, y):
+        if int(x.split('-')[0]) > int(y.split('-')[0]):
+            return x
+        else:
+            return y
 
 
 class GruntPlugin(Plugin):
@@ -101,6 +155,7 @@ class GruntPlugin(Plugin):
             self.is_setup = True
 
     def build(self):
+        super(GruntPlugin, self).build(self)
         self.setup()
 
         path = self.options.get('path') or '.'
@@ -119,14 +174,10 @@ class GruntPlugin(Plugin):
         if not grunt_file:
             raise Exception('No Gruntfile found.')
 
+        # Parse Gruntfile
         grunt_file_path = os.path.join(grunt_path, grunt_file)
         if context:
-            # Parse Gruntfile
-            loader = jinja2.loaders.FileSystemLoader(grunt_path)
-            env = jinja2.Environment(loader=loader)
-            data = env.get_template(grunt_file).render(context)
-            with open(grunt_file_path, 'w') as grunt:
-                grunt.write(data)
+            utils.render_template(grunt_file_path, contexts=[context])
 
         # Run grunt build task
         os.chdir(grunt_file_path)
@@ -134,11 +185,11 @@ class GruntPlugin(Plugin):
         call(['grunt', 'build'])
 
 
-def create_plugin(name, options, path):
+def create_plugin(name, options, path, relative_path):
     plugins = Plugin.__subclasses__()
 
     for plugin in plugins:
         if plugin.name == name:
-            return plugin(options, path)
+            return plugin(options, path, relative_path)
 
     return None

@@ -73,7 +73,7 @@ class Release(AuditedModel):
                 dir_util.copy_tree(source_path, buffers['source'])
 
                 # Create BuildParser
-                source = parser.SourceParser(buffers['source'])
+                source = parser.SourceParser(buffers['source'], release)
 
                 # Decrypt
                 source.decrypt_secrets()
@@ -99,7 +99,7 @@ class Release(AuditedModel):
         tar_file.close()
 
         # Build docker images
-        release_source = parser.SourceParser(buffers['release'])
+        release_source = parser.SourceParser(buffers['release'], release)
         release_source.build_and_push(release.system, release.sha)
 
         # Run build plugins
@@ -169,25 +169,8 @@ class Environment(models.Model):
 
     @task
     def deploy_task(self, release):
-        existing_release = self.release
-        new_release = release
+
         total_steps = 7
-
-        # Pull release
-        current_task.update_state(state='PROGRESS',
-            meta={
-                'description': 'Pulling release',
-                'current': 1,
-                'total': total_steps
-            }
-        )
-
-        # Create environment buffers
-        buffers = {}
-        env_buffer_path = os.path.join(settings.TEMP_DIR,
-                                       systems,
-                                       self.system.name,
-                                       self.name)
 
         def pull_release(release, path):
             sha = release.sha
@@ -196,6 +179,28 @@ class Environment(models.Model):
             tar_file = tarfile.open(tar_path)
             tar_file.extractall(path)
             tar_file.close()
+
+        def update_status(current, description):
+            current_task.update_state(state='PROGRESS',
+                meta={
+                    'description': description,
+                    'current': current,
+                    'total': total_steps
+                }
+            )
+
+        existing_release = self.release
+        new_release = release
+
+        # Pull release
+        update_status(1, 'Pulling release')
+
+        # Create environment buffers
+        buffers = {}
+        env_buffer_path = os.path.join(settings.TEMP_DIR,
+                                       systems,
+                                       self.system.name,
+                                       self.name)
 
         # Setup existing release buffer
         buffers['existing'] = os.path.join(env_buffer_path, 'existing')
@@ -212,59 +217,32 @@ class Environment(models.Model):
         # Pull existing release
         pull_release(new_release, buffers['new'])
 
+        # Parse sources
+        new_source = parser.SourceParser(buffers['new'], new_release)
+        existing_source = None
+        if existing_release:
+            existing_source = parser.SourceParser(buffers['existing'],
+                                                  existing_release)
+
         # Run pre-deploy plugins
-        current_task.update_state(state='PROGRESS',
-            meta={
-                'description': 'Running pre-deploy plugins',
-                'current': 2,
-                'total': total_steps
-            }
-        )
+        update_status(2, 'Running pre-deploy plugins')
+        new_source.run_pre_deploy_plugins(existing_source)
 
         # Pull release configuration
-        current_task.update_state(state='PROGRESS',
-            meta={
-                'description': 'Pulling release configuration',
-                'current': 3,
-                'total': total_steps
-            }
-        )
+        update_status(3, 'Pulling release configuration')
 
         # Push images and configurations to nodes
-        current_task.update_state(state='PROGRESS',
-            meta={
-                'description': 'Pushing images and configurations to nodes',
-                'current': 4,
-                'total': total_steps
-            }
-        )
+        update_status(4, 'Pushing images and configurations to nodes')
 
         # Change release
-        current_task.update_state(state='PROGRESS',
-            meta={
-                'description': 'Changing release',
-                'current': 5,
-                'total': total_steps
-            }
-        )
+        update_status(5, 'Changing release')
 
         # Switch buffers
-        current_task.update_state(state='PROGRESS',
-            meta={
-                'description': 'Switching buffers',
-                'current': 6,
-                'total': total_steps
-            }
-        )
+        update_status(6, 'Switching buffers')
 
         # Run post-deploy plugins
-        current_task.update_state(state='PROGRESS',
-            meta={
-                'description': 'Running post-deploy plugins',
-                'current': 7,
-                'total': total_steps
-            }
-        )
+        update_status(7, 'Running post-deploy plugins')
+        new_source.run_post_deploy_plugins(existing_source)
 
         """
         if old_release:

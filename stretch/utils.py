@@ -4,6 +4,8 @@ import importlib
 import lockfile
 import string
 import random
+import jinja2
+import collections
 import salt.client
 import salt.config
 import salt.wheel
@@ -48,6 +50,17 @@ def update(d, u):
         else:
             d[k] = u[k]
     return d
+
+
+def render_template(path, contexts=[]):
+    context = {}
+    [update(context, c) for c in contexts]
+    directory, file_name = os.path.split(path)
+    loader = jinja2.loaders.FileSystemLoader(directory)
+    env = jinja2.Environment(loader=loader)
+    data = env.get_template(file_name).render(context)
+    with open(path, 'w') as f:
+        f.write(data)
 
 
 def generate_memorable_name():

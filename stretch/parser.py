@@ -15,9 +15,10 @@ docker_client = docker.Client(base_url='unix://var/run/docker.sock',
 
 
 class Node(object):
-    def __init__(self, path, name=None):
+    def __init__(self, path, relative_path, name=None):
         self.name = name
         self.path = path
+        self.relative_path = relative_path
 
         # Load from path
         build_files = parse_node(self.path)
@@ -74,10 +75,12 @@ class Node(object):
 
 
 class SourceParser(object):
-    def __init__(self, path):
+    def __init__(self, path, release=None):
         self.path = path
+        self.release = release
         self.nodes = []
         self.parse()
+        self.load_plugins()
 
     def parse(self):
         root_files = parse_node(self.path)
@@ -90,11 +93,46 @@ class SourceParser(object):
             self.global_files = root_files
 
             for name, path in nodes.iteritems():
-                self.nodes.append(Node(path, name))
+                node_path = os.path.join(self.path, path)
+                self.nodes.append(Node(node_path, path, name))
         else:
             # Individual node declaration used
             self.multiple_nodes = False
-            self.nodes.append(Node(self.path))
+            self.nodes.append(Node(self.path, '/'))
+
+    def load_plugins(self):
+        self.plugins = []
+        local_stretch = None
+
+        if self.multiple_nodes:
+            secrets = get_data(self.global_files.get('secrets'))
+            data = get_data(self.global_files.get('stretch'), secrets)
+
+            global_plugins = data.get('plugins')
+
+            if global_plugins:
+                for name, options in global_plugins.iteritems():
+                    self.plugins.append(create_plugin(name, options,
+                                                      self.path, '/'))
+
+            local_stretch = data.get('local_stretch')
+
+        for node in self.nodes:
+            node_plugins = {}
+
+            if local_stretch:
+                for conf in local_stretch.values():
+                    local_plugins = conf.get('plugins')
+                    includes = conf.get('includes')
+                    if includes and local_plugins and node.name in includes:
+                        utils.update(node_plugins, local_plugins)
+
+            if node.plugins:
+                update(node_plugins, node.plugins)
+
+            for name, options in node_plugins.iteritems():
+                self.plugins.append(create_plugin(name, options, node.path,
+                                                  node.relative_path))
 
     def decrypt_secrets(self):
         gpg = gnupg.GPG()
@@ -176,39 +214,13 @@ class SourceParser(object):
         [node.build_and_push(sha) for node in self.nodes]
 
     def run_build_plugins(self):
-        plugins = []
-        local_stretch = None
+        [plugin.build() for plugin in self.plugins]
 
-        if self.multiple_nodes:
-            secrets = get_data(self.global_files.get('secrets'))
-            data = get_data(self.global_files.get('stretch'), secrets)
+    def run_pre_deploy_plugins(self, existing=None):
+        [plugin.pre_deploy(self, existing) for plugin in self.plugins]
 
-            global_plugins = data.get('plugins')
-
-            if global_plugins:
-                for name, options in global_plugins.iteritems():
-                    plugins.append(create_plugin(name, options, self.path))
-
-            local_stretch = data.get('local_stretch')
-
-        for node in self.nodes:
-            node_plugins = {}
-
-            if local_stretch:
-                for conf in local_stretch.values():
-                    local_plugins = conf.get('plugins')
-                    includes = conf.get('includes')
-                    if includes and local_plugins and node.name in includes:
-                        utils.update(node_plugins, local_plugins)
-
-            if node.plugins:
-                update(node_plugins, node.plugins)
-
-            for name, options in node_plugins.iteritems():
-                plugins.append(create_plugin(name, options, node.path))
-
-        # Run all build plugins
-        [plugin.build() for plugin in plugins]
+    def run_post_deploy_plugins(self, existing=None):
+        [plugin.post_deploy(self, existing) for plugin in self.plugins]
 
 
 def parse_node(path):
