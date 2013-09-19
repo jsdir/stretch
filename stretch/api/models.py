@@ -9,6 +9,7 @@ from django.contrib.contenttypes.models import ContentType
 from django.contrib.contenttypes import generic
 from celery import current_task
 from celery.contrib.methods import task
+from distutils import dir_util
 
 from stretch import plugins, utils, parser
 from stretch.utils import salt_client
@@ -258,6 +259,13 @@ class Environment(models.Model):
 
         # Switch buffers
         update_status(6, 'Switching buffers')
+
+        # Clear existing buffer
+        shutil.rmtree(buffers['existing'])
+        utils.makedirs(buffers['existing'])
+        dir_util.copy_tree(buffers['new'], buffers['existing'])
+        shutil.rmtree(buffers['new'])
+        utils.makedirs(buffers['new'])
 
         # Run post-deploy plugins
         update_status(7, 'Running post-deploy plugins')
