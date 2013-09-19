@@ -82,11 +82,11 @@ The *release configuration* is loaded from the archives. Since the *release conf
 
 ### Push images and configurations to nodes
 
-The configuration trees are pushed to their corresponding nodes. Each node pulls their corresponding images from the docker registry.
+The configuration trees are pushed to their corresponding nodes. Each node pulls its corresponding images from the docker registry.
 
 ### Change release
 
-Each node affected by the deploy is then commanded via it's agent to switch to the new release. This process is done incrementally based on groups to prevent a full system outage and to ensure a zero-downtime deploy.
+Each node affected by the deploy is then commanded via its agent to switch to the new release. This process is done incrementally based on groups to prevent a full system outage and to ensure a zero-downtime deploy.
 
 ### Switch buffers
 
