@@ -216,11 +216,13 @@ class SourceParser(object):
     def run_build_plugins(self):
         [plugin.build() for plugin in self.plugins]
 
-    def run_pre_deploy_plugins(self, existing=None):
-        [plugin.pre_deploy(self, existing) for plugin in self.plugins]
+    def run_pre_deploy_plugins(self, existing, environment):
+        for plugins in self.plugins:
+            plugin.pre_deploy(self, existing, environment)
 
-    def run_post_deploy_plugins(self, existing=None):
-        [plugin.post_deploy(self, existing) for plugin in self.plugins]
+    def run_post_deploy_plugins(self, existing, environment):
+        for plugins in self.plugins:
+            plugin.post_deploy(self, existing, environment)
 
 
 def parse_node(path):

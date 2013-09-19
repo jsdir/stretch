@@ -47,11 +47,23 @@ class Plugin(object):
     def build(self):
         log.debug('%s build hook triggered' % self)
 
-    def pre_deploy(self, new_source, existing_source):
+    def pre_deploy(self, new_source, existing_source, environment):
         log.debug('%s pre_deploy hook triggered' % self)
 
-    def post_deploy(self, new_source, existing_source):
+    def post_deploy(self, new_source, existing_source, environment):
         log.debug('%s post_deploy hook triggered' % self)
+
+
+class ServicesContext(object):
+    def __init__(self, environment):
+        self.services = environment.system.services
+
+    def __getattribute__(self, attr):
+        data = None
+        service = self.services.objects.get(name=attr)
+        if service:
+            data = service.data
+        return data
 
 
 class MigrationsPlugin(Plugin):
@@ -71,7 +83,7 @@ class MigrationsPlugin(Plugin):
             self.env.install_package('db-migrate', '0.5.4', ['-g'])
             self.is_setup = True
 
-    def pre_deploy(self, new_source, existing_source):
+    def pre_deploy(self, new_source, existing_source, environment):
         # Migrations are done before releases are rolled out
         super(MigrationsPlugin, self).pre_deploy(self, new_source,
                                                  existing_source)
@@ -84,7 +96,7 @@ class MigrationsPlugin(Plugin):
 
         if (not existing_release or
                 new_release.created_at > existing_release.created_at):
-            self.migrate(self, new_release, existing_release)
+            self.migrate(self, new_release, existing_release, environment)
         else:
             existing_plugin = None
             for plugin in existing_release.plugins:
@@ -93,25 +105,28 @@ class MigrationsPlugin(Plugin):
                     existing_plugin = plugin
 
             if existing_plugin:
-                self.migrate(existing_plugin, new_release, existing_release)
+                self.migrate(existing_plugin, new_release, existing_release,
+                             environment)
             else:
                 # TODO: logger
                 print "Exsiting release plugin not found. Skipping."
 
-    def migrate(self, plugin, new_release, existing_release):
+    def migrate(self, plugin, new_release, existing_release, environment):
         migrations_path = self.get_migrations_path(plugin)
 
         # Parse database.json
         database_file_path = os.path.join(migrations_path, 'database.json')
+
         contexts = [{
-            'services': None,
-            'environment': None,
+            'services': ServicesContext(environment),
+            'environment': environment,
             'release': new_release,
             'existing_release': existing_release
         }]
         context = self.options.get('context')
         if context:
             contexts.append(context)
+
         utils.render_template(database_file_path, contexts=contexts)
 
         os.chdir(migrations_path)

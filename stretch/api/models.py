@@ -2,6 +2,7 @@ import os.path
 import shutils
 import json
 import tarfile
+import jsonfield
 from django.db import models
 from django_enumfield import enum
 from django.contrib.contenttypes.models import ContentType
@@ -26,6 +27,13 @@ class System(models.Model):
     name = models.TextField(unique=True)
 
 
+class Service(models.Model):
+    # TODO: alphanumeric (variable name)
+    name = models.TextField(unique=True)
+    system = models.ForeignKey(System)
+    data = jsonfield.JSONField()
+
+
 class Release(AuditedModel):
     name = models.TextField(unique=True)
     sha = models.CharField('SHA', max_length=40)
@@ -35,7 +43,6 @@ class Release(AuditedModel):
         self.name = utils.generate_memorable_name()
         self.sha = utils.generate_random_hex(40)
         self.system = system
-
 
     @classmethod
     def create_from_sources(cls, system, sources):
@@ -226,7 +233,7 @@ class Environment(models.Model):
 
         # Run pre-deploy plugins
         update_status(2, 'Running pre-deploy plugins')
-        new_source.run_pre_deploy_plugins(existing_source)
+        new_source.run_pre_deploy_plugins(existing_source, self)
 
         # Pull release configuration
         update_status(3, 'Pulling release configuration')
@@ -242,7 +249,7 @@ class Environment(models.Model):
 
         # Run post-deploy plugins
         update_status(7, 'Running post-deploy plugins')
-        new_source.run_post_deploy_plugins(existing_source)
+        new_source.run_post_deploy_plugins(existing_source, self)
 
         """
         if old_release:
