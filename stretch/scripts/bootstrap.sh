@@ -24,6 +24,7 @@ echo "127.0.1.1 ${HOSTNAME} ${FQDN}" >> /etc/hosts
 service rsyslog restart
 
 # Bootstrap salt-minion
+apt-get install -y curl
 curl -L http://bootstrap.saltstack.org | sh
 
 # Set salt-master
