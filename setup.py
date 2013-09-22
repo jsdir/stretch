@@ -3,14 +3,13 @@
 import os
 from setuptools import setup, find_packages
 
-from stretch import __version__
 
 with open('requirements.txt') as f:
     install_requires = f.read().splitlines()
 
 setup(
     name='stretch',
-    version=__version__,
+    version='0.0.1',
     description='A private PaaS.',
     long_description=open('README.md').read(),
     packages=find_packages(exclude=['tests', 'client']),
