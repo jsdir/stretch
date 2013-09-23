@@ -9,7 +9,7 @@ DATABASES = {
     }
 }
 
-SOURCES = {
+SOURCE = {
     'stretch.sources.GitRepositorySource': {
         'url': 'github.com/user/myrepo.git',
     },

@@ -210,7 +210,7 @@ from .celery_settings import *
 from .salt_settings import *
 
 # default settings
-SOURCES = {}
+SOURCE = {}
 BACKEND = {}
 CACHE_DIR = '/var/cache/stretch'
 LOCK_DIR = '/var/lock/stretch'
@@ -218,6 +218,8 @@ TEMP_DIR = '/tmp/stretch'
 DATA_DIR = '/var/lib/stretch'
 DOMAIN_NAME = None
 SALT_CONF_PATH = '/etc/salt'
+BATCH_SIZE = 5
+REGISTRY_URL = 'registry.example.net:5000'
 
 try:
     from .local_settings import *
