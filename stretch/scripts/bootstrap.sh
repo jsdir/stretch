@@ -27,6 +27,9 @@ service rsyslog restart
 apt-get install -y curl
 curl -L http://bootstrap.saltstack.org | sh
 
+# Make agent directory
+mkdir -p /var/lib/stretch/agent
+
 # Set salt-master
 echo "master: ${MASTER}" >> /etc/salt/minion
 
