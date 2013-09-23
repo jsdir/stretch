@@ -12,8 +12,10 @@ from celery import current_task
 from celery.contrib.methods import task
 from distutils import dir_util
 
+import stretch
 from stretch import plugins, utils, parser
 from stretch.utils import salt_client
+from stretch.sources import Source
 
 
 class AuditedModel(models.Model):
@@ -168,14 +170,17 @@ class Environment(models.Model):
     auto_deploy = models.BooleanField(default=False)
     hosts = generic.GenericRelation(Host)
     system = models.ForeignKey(System)
-    
-    def deploy(self, release):
-        result = self.deploy_task.delay(release)
-        deploy = Deploy(release=release, target=self, task_id=result.id)
-        deploy.save()
+
+    def deploy(self, obj):
+        if isinstance(obj, Release):
+            result = self.deploy_release.delay(release)
+            deploy = Deploy(release=release, target=self, task_id=result.id)
+            deploy.save()
+        elif isinstance(obj, Source):
+            self.deploy_source.delay(source)
 
     @task
-    def deploy_task(self, release):
+    def deploy_release(self, release):
 
         total_steps = 7
 
@@ -293,6 +298,10 @@ class Environment(models.Model):
         # Run post-deploy plugins
         update_status(7, 'Running post-deploy plugins')
         new_source.run_post_deploy_plugins(existing_source, self)
+
+    @task
+    def deploy_source(self, source):
+        backend = stretch.backend
 
     def add_host(self, node):
         host = backend.create_host()

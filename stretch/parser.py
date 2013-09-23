@@ -4,81 +4,136 @@ import yaml
 import collections
 import gnupg
 import docker
+import logging
 from distutils import dir_util
 
 from stretch import utils, contexts
 from stretch.plugins import create_plugin
 
 
+log = logging.getLogger('stretch')
 docker_client = docker.Client(base_url='unix://var/run/docker.sock',
                               version='1.4')
 
 
+class Container(object):
+    def __init__(self, path, parent=None, ancestor_paths=[]):
+        self.from_container = None
+        self.path = os.path.realpath(path)
+        self.parent = parent
+
+        # Check for reference loop
+        if self.path in ancestor_paths:
+            raise Exception('Encountered container reference loop.')
+        ancestor_paths.append(self.path)
+
+        # Parse and find base containers
+        container_path = os.path.join(self.path, 'container.yml')
+        if os.path.exists(container_path):
+            container_data = get_data(container_path)
+
+            from_path = container_data.get('from')
+            if from_path:
+                from_container_path = os.path.join(self.path, from_path)
+                self.from_container = Container(from_container_path, self,
+                                                ancestor_paths)
+
+
 class Node(object):
     def __init__(self, path, relative_path, name=None):
-        self.name = name
-        self.path = path
+        self.path = os.path.realpath(path)
         self.relative_path = relative_path
+        self.name = name
 
-        # Load from path
-        build_files = parse_node(self.path)
-        self.stretch = build_files.get('stretch')
-        self.secrets = build_files.get('secrets')
-        self.config = build_files.get('config')
+        # Begin parsing node
+        self.parse()
 
-    def finalize(self):
-        self.secret_data = get_data(self.secrets) or {}
-        data = get_data(self.stretch, self.secret_data)
+    def parse(self):
+        log.info('Parsing node %s' % self.relative_path)
 
+        # Get the build files from the root of the node
+        self.build_files = get_build_files(self.path)
+
+        # Find node's name if not defined
+        node_stretch = get_data(self.build_files['stretch'])
         if not self.name:
-            # Get name for individual node
-            self.name = data.get('name')
+            self.name = node_stretch.get('name')
             if not self.name:
                 raise Exception('No name defined for node.')
 
-        self.container = data.get('container')
-
-        if self.container:
-            self.container_path = os.path.join(self.path, self.container)
+        # Find containers
+        container = node_stretch.get('container')
+        if container_path:
+            self.container = Container(os.path.join(self.path, container))
         else:
-            self.container_path = self.path
+            self.container = Container(self.path)
 
-        self.plugins = data.get('plugins')
 
-    def build_and_push(self, system, sha):
-        tag = self.build_container(self.container_path, self.name, system, sha)
-        docker_client.push(tag)
+class SourceParser(object):
+    def __init__(self, path):
+        self.path = path
+        self.nodes = []
 
-    def get_container_path
+        # Begin parsing source
+        self.parse()
+        self.load_plugins()
 
-    def build_container(self, path, image_name, system, sha):
-        # Build dependencies
-        container_data = None
-        container_path = os.path.join(path, 'container.yml')
-        if os.path.exists(container_path):
-            container_data = get_data(container_path)
-            base_path = container_data.get('from')
+    def parse(self):
+        log.info('Parsing %s' % self.path)
 
-            if base_path:
-                if path == base_path:
-                    raise Exception('Encountered container reference loop.')
+        # Get the build files from the root of the source
+        build_files = get_build_files(self.path)
 
-                self.build_container(base_path, None, system.name, sha)
+        # Determine the node declaration from the root build files
+        root_stretch = get_data(build_files['stretch'])
+        nodes = root_stretch.get('nodes')
 
-        if image_name:
-            tag = '%s/%s' % (system.name, image_name)
-            tag = '%s:%s' % (tag, sha)
+        if nodes:
+            # Mulitple node declaration used
+            self.multiple_nodes = True
+            self.build_files = build_files
+
+            for name, path in nodes.iteritems():
+                node_path = os.path.join(self.path, path)
+                self.nodes.append(Node(node_path, path, name))
         else:
-            if not container_data:
-                raise Exception('No container.yml for dependency.')
-            name = container_data.get('name')
-            if not name:
-                raise Exception('No name defined for container.')
-            tag = '%s/%s' % (system.name, name)
+            # Individual node declaration used
+            self.multiple_nodes = False
+            self.nodes.append(Node(self.path, '/'))
 
-        docker_client.build(path, tag)
-        return tag
+    def load_plugins(self):
+        log.info('Loading plugins...')
 
+        
+
+
+
+def read_file(path):
+    with open(path) as source:
+        return source.read()
+
+
+def get_data(path):
+    return yaml.load(read_file(path))
+
+
+def get_build_files(path):
+    """
+    Return all build files in a path.
+    """
+    build_files = {}
+
+    stretch_path = os.path.join(path, 'stretch.yml')
+    if os.path.exists(stretch_path):
+        build_files['stretch'] = stretch_path
+    else:
+        raise Exception('No stretch.yml exists in node path.')
+
+    config_path = os.path.join(path, 'config.yml')
+    if os.path.exists(config_path):
+        build_files['config'] = config_path
+
+    return build_files
 
 class SourceParser(object):
     def __init__(self, path, release=None, decrypt_secrets=False):

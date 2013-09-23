@@ -130,6 +130,7 @@ class FileSystemSource(AutoloadableSource):
 
     def on_files_change(self, changed_files):
         self.parse()
-        stretch.backend.load(self.existing_parser, self.parser, changed_files)
+        stretch.backend.autoload(self.existing_parser, self.parser,
+                                 changed_files)
 
     def pull(self, options=None): pass

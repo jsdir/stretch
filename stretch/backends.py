@@ -23,23 +23,27 @@ class Backend(object):
         return host
 
 
-class MockBackend(Backend):
-    def __init__(self, options): pass
-
-    def create_host(self): pass
-
-    def delete_host(self, host): pass
-
-
 class AutoloadingBackend(Backend):
-    pass
+    def load(self, existing_parser, parser, changed_files):
+        raise NotImplementedError
 
 
 class DockerBackend(AutoloadingBackend):
     def __init__(self):
         super(DockerBackend, self).__init__()
 
-    def load(self, existing_parser, parser, changed_files):
+    def load_source(self, source):
+        parser = source.parse()
+
+    def autoload(self, existing_parser, parser, changed_files):
+        pass
+
+    def create_host(self):
+        # Communicate with locally installed agent
+        pass
+
+    def delete_host(self, host):
+        # Communicate with locally installed agent
         pass
 
 
