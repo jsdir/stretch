@@ -3,29 +3,20 @@ import git
 import hashlib
 import logging
 import importlib
-
-
-"""
-import watchdog
-class FileSystemEventHandler(watchdog.events.FileSystemEventHandler):
-    def __init__(self, callback):
-        super(FileSystemEventHandler, self).__init__()
-        self.callback = callback
-
-    def on_any_event(self, event):
-        self.callback()"""
-
-
+from watchdog.events import FileSystemEventHandler
+from watchdog.observers import Observer
 from django.conf import settings
 
+import stretch
 
-log = logging.getLogger(__name__)
+
+log = logging.getLogger('stretch')
 
 
 class Source(object):
-    def __init__(self):
+    def __init__(self, options):
         self.path = None
-        # self.nodes = []
+        self.options = options
 
     def pull(self, options=None):
         raise NotImplementedError
@@ -38,24 +29,25 @@ class AutoloadableSource(Source):
     """
     A source that pushes to a compatible backend on a trigger
     """
-    def __init__(self, options):
+    def __init__(self):
         super(AutoloadableSource, self).__init__()
-        self.autoload = options.get('autoload')
-        self.restart_services = options.get('restart_services')
+        self.autoload = self.options.get('autoload') or True
 
     def monitor(self):
         if self.autoload:
-            if self.directory.is_changed:
-                self.on_filesystem_change()
+            self.do_monitor()
+
+    def do_monitor(self):
+        raise NotImplementedError
 
     def on_autoload(self):
         raise NotImplementedError
 
 
 class GitRepositorySource(Source):
-    def __init__(self, options):
+    def __init__(self):
         super(GitRepositorySource, self).__init__()
-        self.url = options.get('url')
+        self.url = self.options.get('url')
         self.path = None
 
     def get_path(self):
@@ -96,12 +88,28 @@ class GitRepositorySource(Source):
             log.info('Using commit: %s' % repo.head.commit.hexsha)
 
 
+class EventHandler(FileSystemEventHandler):
+    def __init__(self, backend):
+        super(FileSystemEventHandler, self).__init__()
+        self.backend = backend
+
+    def on_any_event(self, event):
+        self.backend
+
+
 class FileSystemSource(AutoloadableSource):
-    def __init__(self, options):
-        super(FileSystemSource, self).__init__(options)
-        self.path = options.get('path')
+    def __init__(self):
+        super(FileSystemSource, self).__init__()
+        self.path = self.options.get('path')
 
     def get_path(self):
         return self.path
+
+    def do_monitor(self):
+        log.info('Monitoring %s' % self.path)
+        event_handler = EventHandler(stretch.backend)
+        observer = Observer()
+        observer.schedule(event_handler, self.path, recursive=True)
+        observer.start()
 
     def pull(self, options=None): pass
