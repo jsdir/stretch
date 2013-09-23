@@ -37,14 +37,19 @@ class Node(object):
                 raise Exception('No name defined for node.')
 
         self.container = data.get('container')
+
+        if self.container:
+            self.container_path = os.path.join(self.path, self.container)
+        else:
+            self.container_path = self.path
+
         self.plugins = data.get('plugins')
 
     def build_and_push(self, system, sha):
-        path = self.path
-        if self.container:
-            path = os.path.join(path, self.container)
-        tag = self.build_container(path, self.name, system, sha)
+        tag = self.build_container(self.container_path, self.name, system, sha)
         docker_client.push(tag)
+
+    def get_container_path
 
     def build_container(self, path, image_name, system, sha):
         # Build dependencies
@@ -146,6 +151,23 @@ class SourceParser(object):
             for name, options in node_plugins.iteritems():
                 self.plugins.append(create_plugin(name, options, node.path,
                                                   node.relative_path))
+
+    def mount_templates(self, path):
+        """
+        path/
+            node_name/
+                template1
+                template2
+            node_name/
+                template1
+                template2
+        """
+        for node in self.nodes:
+            dest_path = os.path.join(path, node.name)
+            utils.clear_path(dest_path)
+            templates_path = os.path.join(node.container_path, 'templates')
+            if os.path.exists(templates_path):
+                dir_util.copy_tree(templates_path, dest_path)
 
     def decrypt_secrets(self):
         gpg = gnupg.GPG()

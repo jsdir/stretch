@@ -7,6 +7,7 @@ from django.db import models
 from django_enumfield import enum
 from django.contrib.contenttypes.models import ContentType
 from django.contrib.contenttypes import generic
+from django.conf import settings
 from celery import current_task
 from celery.contrib.methods import task
 from distutils import dir_util
@@ -62,9 +63,7 @@ class Release(AuditedModel):
         release_buffer_path = os.path.join(settings.TEMP_DIR, release.sha)
         for name in ('release', 'source'):
             buffer_path = os.path.join(release_buffer_path, name)
-            if os.path.isdir(buffer_path):
-                shutils.rmtree(buffer_path)
-            utils.makedirs(buffer_path)
+            utils.clear_path(buffer_path)
             buffers[name] = buffer_path
 
         # Pull from sources
@@ -214,7 +213,7 @@ class Environment(models.Model):
         # Create environment buffers
         buffers = {}
         env_buffer_path = os.path.join(settings.TEMP_DIR,
-                                       systems,
+                                       'systems',
                                        self.system.name,
                                        self.name)
 
@@ -227,9 +226,7 @@ class Environment(models.Model):
 
         # Setup new release buffer
         buffers['new'] = os.path.join(env_buffer_path, 'new')
-        if os.path.exists(buffers['new']):
-            shutil.rmtree(buffers['new'])
-        utils.makedirs(buffers['new'])
+        utils.clear_path(buffers['new'])
 
         # Pull new release
         release_config = pull_release(new_release, buffers['new'], True)
@@ -254,6 +251,34 @@ class Environment(models.Model):
         # Push images and configurations to nodes
         update_status(4, 'Pushing images and configurations to nodes')
 
+        hosts = {}
+        for instance in NodeInstance.objects.get(environment=self):
+            host, node_type = instance.host, instance.node.node_type
+            if hosts.has_key(host):
+                if node_type not in hosts[host]:
+                    hosts[host].append(node_type)
+            else:
+                hosts[host] = [node_type]
+
+        # Transport templates
+        # TODO: lock
+        local_path = os.path.join(self.system.name, self.name)
+        templates_path = os.path.join(settings.CACHE_DIR, 'templates',
+                                      local_path)
+        utils.clear_path(templates_path)
+        new_source.mount_templates(templates_path)
+
+        # Pull release
+        fqdns = map(lambda x: x.fqdn, hosts.keys())
+        params = [new_release.sha, settings.REGISTRY_URL, self.system.name,
+                  local_path]
+        salt_client.cmd_batch(fqdns, 'stretch.pull', params,
+                              batch=str(settings.BATCH_SIZE),
+                              expr_form='list')
+
+        # Clear template mount after all nodes have pulled
+        shutil.rmtree(templates_path)
+
         # Change release
         update_status(5, 'Changing release')
 
@@ -261,32 +286,13 @@ class Environment(models.Model):
         update_status(6, 'Switching buffers')
 
         # Clear existing buffer
-        shutil.rmtree(buffers['existing'])
-        utils.makedirs(buffers['existing'])
+        utils.clear_path(buffers['existing'])
         dir_util.copy_tree(buffers['new'], buffers['existing'])
-        shutil.rmtree(buffers['new'])
-        utils.makedirs(buffers['new'])
+        utils.clear_path(buffers['new'])
 
         # Run post-deploy plugins
         update_status(7, 'Running post-deploy plugins')
         new_source.run_post_deploy_plugins(existing_source, self)
-
-        """
-        if old_release:
-            for plugin_application in old_release.plugin_applications:
-                # Plugin applications need precedence
-                plugin = plugins.get_objects.get(plugin_application.plugin_name)
-                plugin.before_release_change(old_release, new_release, self)
-
-        # Set new release
-        current_task.update_state(state='PROGRESS',
-            meta={'current': 2, 'total': 2})
-
-        for plugin_application in new_release.plugin_applications:
-            # Plugin applications need some sort of precedence
-            plugin = plugins.get_objects.get(plugin_application.plugin_name)
-            plugin.after_release_change(old_release, new_release, self)
-        """
 
     def add_host(self, node):
         host = backend.create_host()
@@ -311,6 +317,7 @@ class Node(models.Model):
 class NodeInstance(models.Model):
     node = models.ForeignKey(Node)
     host = models.ForeignKey(Host)
+    environment = models.ForeignKey(Environment)
 
 
 class Group(models.Model):

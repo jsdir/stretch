@@ -3,6 +3,7 @@ import errno
 import importlib
 import lockfile
 import string
+import shutil
 import random
 import jinja2
 import collections
@@ -67,6 +68,12 @@ def render_template(data, contexts=[]):
     context = {}
     [update(context, c) for c in contexts]
     return jinja2.Template(data).render(context)
+
+
+def clear_path(path):
+    if os.path.exists(path):
+        shutil.rmtree(path)
+    makedirs(path)
 
 
 def generate_memorable_name():
