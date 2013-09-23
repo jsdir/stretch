@@ -36,7 +36,11 @@ class AutoloadingBackend(Backend):
 
 
 class DockerBackend(AutoloadingBackend):
-    pass
+    def __init__(self):
+        super(DockerBackend, self).__init__()
+
+    def load(self, existing_parser, parser, changed_files):
+        pass
 
 
 class RackspaceBackend(Backend):

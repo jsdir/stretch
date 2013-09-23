@@ -3,11 +3,13 @@ import git
 import hashlib
 import logging
 import importlib
+import threading
 from watchdog.events import FileSystemEventHandler
 from watchdog.observers import Observer
 from django.conf import settings
 
 import stretch
+from stretch.parser import SourceParser
 
 
 log = logging.getLogger('stretch')
@@ -16,6 +18,7 @@ log = logging.getLogger('stretch')
 class Source(object):
     def __init__(self, options):
         self.path = None
+        self.parser = None
         self.options = options
 
     def pull(self, options=None):
@@ -23,6 +26,11 @@ class Source(object):
 
     def get_path(self):
         raise NotImplementedError
+
+    def parse(self):
+        self.existing_parser = self.parser
+        self.parser = SourceParser(self.path)
+        return self.parser
 
 
 class AutoloadableSource(Source):
@@ -38,9 +46,6 @@ class AutoloadableSource(Source):
             self.do_monitor()
 
     def do_monitor(self):
-        raise NotImplementedError
-
-    def on_autoload(self):
         raise NotImplementedError
 
 
@@ -89,27 +94,42 @@ class GitRepositorySource(Source):
 
 
 class EventHandler(FileSystemEventHandler):
-    def __init__(self, backend):
+    def __init__(self, source):
         super(FileSystemEventHandler, self).__init__()
-        self.backend = backend
+        self.source = source
+        self.queue = []
+        self.timer = None
 
     def on_any_event(self, event):
-        self.backend
+        self.queue.append(event)
+        if self.timer:
+            self.timer.cancel()
+        self.timer = threading.Timer(0.2, self.push_queue)
+        self.timer.start()
+
+    def push_queue(self):
+        self.source.on_files_change(self.queue)
+        self.queue = []
 
 
 class FileSystemSource(AutoloadableSource):
     def __init__(self):
         super(FileSystemSource, self).__init__()
         self.path = self.options.get('path')
+        self.parse()
 
     def get_path(self):
         return self.path
 
     def do_monitor(self):
         log.info('Monitoring %s' % self.path)
-        event_handler = EventHandler(stretch.backend)
+        event_handler = EventHandler(self)
         observer = Observer()
         observer.schedule(event_handler, self.path, recursive=True)
         observer.start()
+
+    def on_files_change(self, changed_files):
+        self.parse()
+        stretch.backend.load(self.existing_parser, self.parser, changed_files)
 
     def pull(self, options=None): pass
