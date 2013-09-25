@@ -77,11 +77,8 @@ class SourceParser(object):
 
         # Begin parsing source
         self.parse()
-
-        log.info('Loading plugins...')
         self.plugins = self.get_plugins()
-        self.load_plugins()
-        self.load_monitored_paths()
+        self.monitored_paths = self.get_monitored_paths()
 
     def parse(self):
         log.info('Parsing %s' % self.path)
@@ -107,6 +104,8 @@ class SourceParser(object):
             self.nodes.append(Node(self.path, '/'))
 
     def get_plugins(self):
+        log.info('Loading plugins...')
+
         plugins = []
 
         objects = self.nodes
@@ -126,18 +125,21 @@ class SourceParser(object):
 
         monitored_paths = {}
 
+        def add_path(node, path):
+            if monitored_paths.has_key(node):
+                monitored_paths[node].append(path)
+            else:
+                monitored_paths[node] = [path]
+
         # Find app paths
         for node in self.nodes:
             app_path = os.path.join(node.container.path, 'app')
             if os.path.exists(app_path):
-                if monitored_path.has_key(node):
-                    monitored_paths[node].append(app_path)
-                else:
-                    monitored_paths[node] = [app_path]
+                add_path(node, app_path)
 
         # Find plugin paths
         for plugin in self.plugins:
-            monitored_paths += plugin.monitored_paths
+            add_path(plugin.parent, plugin.monitored_paths)
 
         return monitored_paths
 
