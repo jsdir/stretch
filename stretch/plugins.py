@@ -36,10 +36,11 @@ class NodePluginEnvironment(PluginEnvironment):
 
 
 class Plugin(object):
-    def __init__(self, options, path, relative_path):
+    def __init__(self, options, parent):
         self.options = options
-        self.path = path
-        self.relative_path = relative_path
+        self.parent = parent
+        self.path = parent.path
+        self.relative_path = parent.relative_path
         self.monitored_paths = map(lambda x: os.path.join(self.path, x),
                                    self.options.get('watch', []))
 
@@ -196,11 +197,11 @@ class GruntPlugin(Plugin):
         call(['grunt', 'build'])
 
 
-def create_plugin(name, options, path, relative_path):
+def create_plugin(name, options, parent):
     plugins = Plugin.__subclasses__()
 
     for plugin in plugins:
         if plugin.name == name:
-            return plugin(options, path, relative_path)
+            return plugin(options, parent)
 
     return None

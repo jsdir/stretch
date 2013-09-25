@@ -72,10 +72,14 @@ class Node(object):
 class SourceParser(object):
     def __init__(self, path):
         self.path = path
+        self.relative_path = '/'
         self.nodes = []
 
         # Begin parsing source
         self.parse()
+
+        log.info('Loading plugins...')
+        self.plugins = self.get_plugins()
         self.load_plugins()
         self.load_monitored_paths()
 
@@ -102,42 +106,51 @@ class SourceParser(object):
             self.multiple_nodes = False
             self.nodes.append(Node(self.path, '/'))
 
-    def load_plugins(self):
-        log.info('Loading plugins...')
+    def get_plugins(self):
+        plugins = []
 
-        self.plugins = []
-
+        objects = self.nodes
         if self.multiple_nodes:
-            plugins = self.stretch_data.get('plugins')
-            if plugins:
-                for name, options in plugins.iteritems():
-                    self.plugins.append(create_plugin(name, options,
-                                                      self.path, '/'))
+            objects = [self] + objects
 
-        for node in self.nodes:
-            plugins = node.stretch_data.get('plugins')
-            if plugins:
-                for name, options in plugins.iteritems():
-                    self.plugins.append(create_plugin(name, options,
-                                                      node.path,
-                                                      node.relative_path))
+        for obj in objects:
+            obj_plugins = obj.stretch_data.get('plugins')
+            if obj_plugins:
+                for name, options in obj_plugins.iteritems():
+                    plugins.append(create_plugin(name, options, obj))
 
-    def load_monitored_paths(self):
+        return plugins
+
+    def get_monitored_paths(self):
         log.info('Searching for paths to monitor...')
 
-        monitored_paths = []
+        monitored_paths = {}
 
         # Find app paths
         for node in self.nodes:
             app_path = os.path.join(node.container.path, 'app')
             if os.path.exists(app_path):
-                monitored_paths.append(app_path)
+                if monitored_path.has_key(node):
+                    monitored_paths[node].append(app_path)
+                else:
+                    monitored_paths[node] = [app_path]
 
         # Find plugin paths
         for plugin in self.plugins:
             monitored_paths += plugin.monitored_paths
 
         return monitored_paths
+
+    def run_build_plugins(self):
+        [plugin.build() for plugin in self.plugins]
+
+    def run_pre_deploy_plugins(self, existing, environment):
+        for plugins in self.plugins:
+            plugin.pre_deploy(self, existing, environment)
+
+    def run_post_deploy_plugins(self, existing, environment):
+        for plugins in self.plugins:
+            plugin.post_deploy(self, existing, environment)
 
 
 def read_file(path):

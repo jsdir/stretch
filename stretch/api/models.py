@@ -193,6 +193,7 @@ class Environment(models.Model):
                 break
 
         if autoload:
+            parser.run_build_plugins()
             # Run build plugins
             # Run pre-deploy
             # Switch /app and agent.restart for nodes that need it
