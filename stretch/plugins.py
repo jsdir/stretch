@@ -130,7 +130,7 @@ class MigrationsPlugin(Plugin):
             call(['db-migrate', '-e', 'stretch', 'down', migration_file])
 
     def get_migrations_path(self, plugin):
-        path = plugin.options.get('path') or '.'
+        path = plugin.options.get('path', '.')
         return os.path.join(plugin.path, path)
 
     def get_later_migration(self, x, y):
@@ -161,7 +161,7 @@ class GruntPlugin(Plugin):
         super(GruntPlugin, self).build(self)
         self.setup()
 
-        path = self.options.get('path') or '.'
+        path = self.options.get('path', '.')
         context = self.options.get('context')
 
         grunt_path = os.path.join(self.path, path)
