@@ -55,14 +55,14 @@ class Node(object):
         self.build_files = get_build_files(self.path)
 
         # Find node's name if not defined
-        node_stretch = get_data(self.build_files['stretch'])
+        self.stretch_data = get_data(self.build_files['stretch'])
         if not self.name:
-            self.name = node_stretch.get('name')
+            self.name = self.stretch_data.get('name')
             if not self.name:
                 raise Exception('No name defined for node.')
 
         # Find containers
-        container = node_stretch.get('container')
+        container = self.stretch_data.get('container')
         if container_path:
             self.container = Container(os.path.join(self.path, container))
         else:
@@ -77,6 +77,7 @@ class SourceParser(object):
         # Begin parsing source
         self.parse()
         self.load_plugins()
+        self.load_monitored_paths()
 
     def parse(self):
         log.info('Parsing %s' % self.path)
@@ -85,8 +86,8 @@ class SourceParser(object):
         build_files = get_build_files(self.path)
 
         # Determine the node declaration from the root build files
-        root_stretch = get_data(build_files['stretch'])
-        nodes = root_stretch.get('nodes')
+        self.stretch_data = get_data(build_files['stretch'])
+        nodes = self.stretch_data.get('nodes')
 
         if nodes:
             # Mulitple node declaration used
@@ -104,8 +105,39 @@ class SourceParser(object):
     def load_plugins(self):
         log.info('Loading plugins...')
 
-        
+        self.plugins = []
 
+        if self.multiple_nodes:
+            plugins = self.stretch_data.get('plugins')
+            if plugins:
+                for name, options in plugins.iteritems():
+                    self.plugins.append(create_plugin(name, options,
+                                                      self.path, '/'))
+
+        for node in self.nodes:
+            plugins = node.stretch_data.get('plugins')
+            if plugins:
+                for name, options in plugins.iteritems():
+                    self.plugins.append(create_plugin(name, options,
+                                                      node.path,
+                                                      node.relative_path))
+
+    def load_monitored_paths(self):
+        log.info('Searching for paths to monitor...')
+
+        monitored_paths = []
+
+        # Find app paths
+        for node in self.nodes:
+            app_path = os.path.join(node.container.path, 'app')
+            if os.path.exists(app_path):
+                monitored_paths.append(app_path)
+
+        # Find plugin paths
+        for plugin in self.plugins:
+            monitored_paths += plugin.monitored_paths
+
+        return monitored_paths
 
 
 def read_file(path):

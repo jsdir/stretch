@@ -40,6 +40,8 @@ class Plugin(object):
         self.options = options
         self.path = path
         self.relative_path = relative_path
+        self.monitored_paths = map(lambda x: os.path.join(self.path, x),
+                                   self.options.get('watch', []))
 
     def setup(self):
         raise NotImplementedError

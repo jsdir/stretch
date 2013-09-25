@@ -129,11 +129,11 @@ class FileSystemSource(AutoloadableSource):
         observer.schedule(event_handler, self.path, recursive=True)
         observer.start()
 
-    def on_files_change(self, changed_files):
+    def on_files_change(self, file_events):
         self.parse()
 
         for environment in Environment.objects.filter(auto_deploy=True):
             environment.autoload(self, self.existing_parser, self.parser,
-                                 changed_files)
+                                 file_events)
 
     def pull(self, options=None): pass

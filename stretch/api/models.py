@@ -1,4 +1,4 @@
-import os.path
+import os
 import shutils
 import json
 import tarfile
@@ -179,14 +179,29 @@ class Environment(models.Model):
         elif isinstance(obj, Source):
             self.deploy_source.delay(source)
 
-    def autoload(self, source, existing_parser, parser, changed_files):
-        # If anything in /app folders or plugin watch directories changes:
+    def autoload(self, source, existing_parser, parser, file_events):
+        autoload = False
+        monitored = parser.monitored_paths
+
+        # Autoload only if any event took place within a monitored path
+        for event in file_events:
+            path = event.src_path
+            if hasattr(event, 'dest_path'):
+                path = event.dest_path
+            if any([self.path_contains(mpath, path) for mpath in monitored]):
+                autoload = True
+                break
+
+        if autoload:
             # Run build plugins
             # Run pre-deploy
             # Switch /app and agent.restart for nodes that need it
             # Run post-deploy
             # stretch.backend
-        pass
+            pass
+
+    def path_contains(self, path, file_path):
+        return not os.path.relpath(file_path, path).startswith('..')
 
     @task
     def deploy_release(self, release):
