@@ -10,7 +10,8 @@ class ServicesContext(object):
         return data
 
 
-def create_deploy_context(new_release, existing_release, environment):
+def create_deploy_context(environment, new_release=None,
+                          existing_release=None):
     return {
         'services': ServicesContext(environment),
         'environment': environment,

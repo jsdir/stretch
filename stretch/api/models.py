@@ -200,13 +200,14 @@ class Environment(models.Model):
                     break
 
         if autoload_nodes:
-            parser.run_build_plugins()
             # Run build plugins
-            # Run pre-deploy
+            parser.run_build_plugins(autoload_nodes)
+            # Run pre-deploy plugins
+            parser.run_pre_deploy_plugins(autoload_nodes)
             # Switch /app and agent.restart for nodes that need it
-            # Run post-deploy
+            # Run post-deploy plugins
+            parser.run_post_deploy_plugins(autoload_nodes)
             # stretch.backend
-            pass
 
     @task
     def deploy_release(self, release):

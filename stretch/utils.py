@@ -53,14 +53,14 @@ def update(d, u):
     return d
 
 
-def render_template_to_file(path, contexts=[]):
+def render_template_to_file(path, dest=None, contexts=[]):
     context = {}
     [update(context, c) for c in contexts]
     directory, file_name = os.path.split(path)
     loader = jinja2.loaders.FileSystemLoader(directory)
     env = jinja2.Environment(loader=loader)
     data = env.get_template(file_name).render(context)
-    with open(path, 'w') as f:
+    with open(dest or path, 'w') as f:
         f.write(data)
 
 

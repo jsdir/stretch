@@ -143,16 +143,20 @@ class SourceParser(object):
 
         return monitored_paths
 
-    def run_build_plugins(self):
-        [plugin.build() for plugin in self.plugins]
+    def run_build_plugins(self, nodes=None):
+        for plugin in self.plugins:
+            if nodes != None or plugin.parent in nodes:
+                plugin.build()
 
-    def run_pre_deploy_plugins(self, existing, environment):
-        for plugins in self.plugins:
-            plugin.pre_deploy(self, existing, environment)
+    def run_pre_deploy_plugins(self, existing, environment, nodes=None):
+        for plugin in self.plugins:
+            if nodes != None or plugin.parent in nodes:
+                plugin.pre_deploy(self, existing, environment)
 
-    def run_post_deploy_plugins(self, existing, environment):
-        for plugins in self.plugins:
-            plugin.post_deploy(self, existing, environment)
+    def run_post_deploy_plugins(self, existing, environment, nodes=None):
+        for plugin in self.plugins:
+            if nodes != None or plugin.parent in nodes:
+                plugin.pre_deploy(self, existing, environment)
 
 
 def read_file(path):
@@ -461,8 +465,8 @@ def parse_release_config(config, new_release, existing_release, environment):
 
     def get_config(data):
         secrets = data.get('secrets')
-        contexts = [contexts.create_deploy_context(new_release,
-            existing_release, environment)]
+        contexts = [contexts.create_deploy_context(environment, new_release,
+                                                   existing_release)]
         config = utils.render_template(data.get('config'), contexts)
         return load_yaml_data(config, secrets)
 

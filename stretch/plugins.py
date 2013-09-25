@@ -8,7 +8,7 @@ from functools import reduce
 from stretch import utils, contexts
 
 
-log = logging.getLogger(__name__)
+log = logging.getLogger('stretch')
 
 
 class PluginEnvironment(object):
@@ -41,8 +41,11 @@ class Plugin(object):
         self.parent = parent
         self.path = parent.path
         self.relative_path = parent.relative_path
+
         self.monitored_paths = map(lambda x: os.path.join(self.path, x),
                                    self.options.get('watch', []))
+        if not self.monitored_paths:
+            self.monitored_paths.append(self.path)
 
     def setup(self):
         raise NotImplementedError
@@ -76,8 +79,9 @@ class MigrationsPlugin(Plugin):
 
     def pre_deploy(self, new_source, existing_source, environment):
         # Migrations are done before releases are rolled out
-        super(MigrationsPlugin, self).pre_deploy(self, new_source,
-                                                 existing_source)
+        super(MigrationsPlugin, self).pre_deploy(new_source,
+                                                 existing_source,
+                                                 environment)
         self.setup()
 
         new_release = new_source.release
@@ -109,8 +113,8 @@ class MigrationsPlugin(Plugin):
         database_file_path = os.path.join(migrations_path, 'database.json')
 
         # Render template
-        contexts = [contexts.create_deploy_context(new_release,
-            existing_release, environment)]
+        contexts = [contexts.create_deploy_context(environment, new_release,
+                                                   existing_release)]
 
         context = self.options.get('context')
         if context:
@@ -159,42 +163,48 @@ class GruntPlugin(Plugin):
             self.is_setup = True
 
     def build(self):
-        super(GruntPlugin, self).build(self)
+        super(GruntPlugin, self).build()
         self.setup()
 
-        path = self.options.get('path', '.')
-        context = self.options.get('context')
+        grunt_path = self.path
+        path = self.options.get('path')
+        if path:
+            grunt_path = os.path.join(grunt_path, path)
 
-        grunt_path = os.path.join(self.path, path)
-
-        # Check for Gruntfile(.js, .coffee)
+        # Check for Gruntfile
         grunt_file = None
 
-        for file_name in ('Gruntfile.js', 'Gruntfile.coffee'):
-            if os.path.exists(os.path.join(grunt_path, file_name)):
-                grunt_file = file_name
+        for file_name in ('Gruntfile.js.jinja', 'Gruntfile.coffee.jinja',
+                          'Gruntfile.js', 'Gruntfile.coffee'):
+            path = os.path.join(grunt_path, file_name)
+            if os.path.exists(path):
+                grunt_file = path
                 break
 
         if not grunt_file:
             raise Exception('No Gruntfile found.')
 
-        # Parse Gruntfile
-        grunt_file_path = os.path.join(grunt_path, grunt_file)
-
         # Render template
-        contexts = [contexts.create_deploy_context(new_release,
-            existing_release, environment)]
+        dest_file = None
+        if grunt_file.endswith('.jinja'):
+            dest_file = os.path.splitext(grunt_file)[0]
+            contexts = [contexts.create_deploy_context(environment)]
 
-        context = self.options.get('context')
-        if context:
-            contexts.append(context)
+            context = self.options.get('context')
+            if context:
+                contexts.append(context)
 
-        utils.render_template_to_file(grunt_file_path, contexts=[context])
+            utils.render_template_to_file(grunt_file, dest=dest_file,
+                                          contexts=[context])
 
         # Run grunt build task
-        os.chdir(grunt_file_path)
+        os.chdir(grunt_path)
         self.env.call_npm(['install'])
         call(['grunt', 'build'])
+
+        # Clean up
+        if dest_file:
+            os.remove(dest_file)
 
 
 def create_plugin(name, options, parent):
