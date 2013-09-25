@@ -180,19 +180,26 @@ class Environment(models.Model):
             self.deploy_source.delay(source)
 
     def autoload(self, source, existing_parser, parser, file_events):
-        autoload = False
+        autoload_nodes = []
         monitored = parser.monitored_paths
 
-        # Autoload only if any event took place within a monitored path
-        for event in file_events:
-            path = event.src_path
-            if hasattr(event, 'dest_path'):
-                path = event.dest_path
-            if any([self.path_contains(mpath, path) for mpath in monitored]):
-                autoload = True
-                break
+        def path_contains(path, file_path):
+            return not os.path.relpath(file_path, path).startswith('..')
 
-        if autoload:
+        # Autoload node only if an event took place within the node's
+        # monitored path
+        for node, paths in monitored:
+            for event in file_events:
+                path = event.src_path
+
+                if hasattr(event, 'dest_path'):
+                    path = event.dest_path
+
+                if any([path_contains(mpath, path) for mpath in paths]):
+                    autoload_nodes.append(node)
+                    break
+
+        if autoload_nodes:
             parser.run_build_plugins()
             # Run build plugins
             # Run pre-deploy
@@ -200,9 +207,6 @@ class Environment(models.Model):
             # Run post-deploy
             # stretch.backend
             pass
-
-    def path_contains(self, path, file_path):
-        return not os.path.relpath(file_path, path).startswith('..')
 
     @task
     def deploy_release(self, release):
