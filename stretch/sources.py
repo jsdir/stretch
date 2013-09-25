@@ -10,6 +10,7 @@ from django.conf import settings
 
 import stretch
 from stretch.parser import SourceParser
+from stretch.models import Environment
 
 
 log = logging.getLogger('stretch')
@@ -130,7 +131,9 @@ class FileSystemSource(AutoloadableSource):
 
     def on_files_change(self, changed_files):
         self.parse()
-        stretch.backend.autoload(self.existing_parser, self.parser,
+
+        for environment in Environment.objects.filter(auto_deploy=True):
+            environment.autoload(self, self.existing_parser, self.parser,
                                  changed_files)
 
     def pull(self, options=None): pass

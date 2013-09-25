@@ -179,6 +179,15 @@ class Environment(models.Model):
         elif isinstance(obj, Source):
             self.deploy_source.delay(source)
 
+    def autoload(self, source, existing_parser, parser, changed_files):
+        # If anything in /app folders or plugin watch directories changes:
+            # Run build plugins
+            # Run pre-deploy
+            # Switch /app and agent.restart for nodes that need it
+            # Run post-deploy
+            # stretch.backend
+        pass
+
     @task
     def deploy_release(self, release):
 
