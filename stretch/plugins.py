@@ -53,11 +53,40 @@ class Plugin(object):
     def build(self):
         log.debug('%s build hook triggered' % self)
 
-    def pre_deploy(self, new_source, existing_source, environment):
+    def pre_deploy(self, environment, new_parser, existing_parser):
         log.debug('%s pre_deploy hook triggered' % self)
 
-    def post_deploy(self, new_source, existing_source, environment):
+    def post_deploy(self, environment, new_parser, existing_parser):
         log.debug('%s post_deploy hook triggered' % self)
+
+    def get_path(self):
+        full_path = self.path
+        path = self.options.get('path')
+
+        if path:
+            full_path = os.path.join(full_path, path)
+
+        return full_path
+
+    def render_template(file_names, path, contexts):
+        # Check for template file
+        template = None
+
+        for file_name in ['%s.jinja' % name for name in file_names]:
+            file_path = os.path.join(path, file_name)
+            if os.path.exists(file_path):
+                template = file_path
+                break
+
+        if not template:
+            raise Exception('No template %s found.' % all_file_names)
+
+        # Render template
+        dest_file = os.path.splitext(template)[0]
+        utils.render_template_to_file(template, dest=dest_file,
+                                      contexts=contexts)
+
+        return dest_file
 
 
 class MigrationsPlugin(Plugin):
@@ -77,62 +106,94 @@ class MigrationsPlugin(Plugin):
             self.env.install_package('db-migrate', '0.5.4', ['-g'])
             self.is_setup = True
 
-    def pre_deploy(self, new_source, existing_source, environment):
-        # Migrations are done before releases are rolled out
-        super(MigrationsPlugin, self).pre_deploy(new_source,
-                                                 existing_source,
-                                                 environment)
+    def pre_deploy(self, environment, new_parser, existing_parser):
+        super(MigrationsPlugin, self).pre_deploy(environment, new_parser,
+                                                 existing_parser)
         self.setup()
+        self.migrate(environment, new_parser, existing_parser, pre_deploy=True)
 
-        new_release = new_source.release
-        existing_release = None
-        if existing_source:
-            existing_release = existing_source.release
+    def post_deploy(self, environment, new_parser, existing_parser):
+        super(MigrationsPlugin, self).post_deploy(environment, new_parser,
+                                                  existing_parser)
+        self.setup()
+        self.migrate(environment, new_parser, existing_parser,
+                     pre_deploy=False)
 
-        if (not existing_release or
-                new_release.created_at > existing_release.created_at):
-            self.migrate(self, new_release, existing_release, environment)
+    def migrate(self, environment, new_parser, existing_parser, pre_deploy):
+        if new_parser.release:
+            # Standard deploy
+            # Get releases
+            new_release = new_parser.release
+            existing_release = None
+            if existing_parser:
+                existing_release = existing_parser.release
+
+            # Determine migration data to use
+            if (not existing_release or
+                    new_release.created_at > existing_release.created_at and
+                    pre_deploy):
+                # Release deploy
+                # Migrate using the new release plugin
+                self.run_migration(environment, self, new_release,
+                                   existing_release)
+            elif not pre_deploy:
+                # Rollback deploy
+                # Use the existing release
+                # Find corresponding plugin in existing release
+                existing_plugin = None
+                for plugin in existing_parser.plugins:
+                    if (plugin.name == self.name and
+                            plugin.relative_path == self.relative_path):
+                        existing_plugin = plugin
+
+                if existing_plugin:
+                    # Migrate using the existing release plugin
+                    self.run_migration(environment, existing_plugin,
+                                       new_release, existing_release)
+                else:
+                    # Leave the database alone since the rollback
+                    # has no data about it
+                    log.info('Migration plugin not found in rollback release. '
+                             'Skipping.')
+        elif pre_deploy:
+            # Autoload deploy
+            # Migrate to latest migration
+            self.run_migration(environment, self, None, None)
+
+    def run_migration(self, environment, plugin, new_release, existing_release):
+        path = plugin.get_path()
+
+        # Check if autoloaded
+        if not new_release:
+            # wipe database and migrate to latest migration in new_parser
+            contexts = [contexts.create_deploy_context(environment)]
         else:
-            existing_plugin = None
-            for plugin in existing_release.plugins:
-                if (plugin.name == self.name and
-                    plugin.relative_path == self.relative_path):
-                    existing_plugin = plugin
+            # Use releases for template context
+            contexts = [contexts.create_deploy_context(
+                environment, new_release, existing_release)]
 
-            if existing_plugin:
-                self.migrate(existing_plugin, new_release, existing_release,
-                             environment)
-            else:
-                # TODO: logger
-                print "Exsiting release plugin not found. Skipping."
-
-    def migrate(self, plugin, new_release, existing_release, environment):
-        migrations_path = self.get_migrations_path(plugin)
-
-        # Parse database.json
-        database_file_path = os.path.join(migrations_path, 'database.json')
-
-        # Render template
-        contexts = [contexts.create_deploy_context(environment, new_release,
-                                                   existing_release)]
-
+        # Render database.json
         context = self.options.get('context')
         if context:
             contexts.append(context)
 
-        utils.render_template_to_file(database_file_path, contexts=contexts)
+        rendered_file = self.render_template(('database.json',), path,
+                                             contexts)
 
-        os.chdir(migrations_path)
+        # Install dependencies and database drivers
+        os.chdir(path)
         self.env.call_npm(['install'])
 
         if plugin == self:
             call(['db-migrate', '-e', 'stretch', 'up'])
         else:
-            new_migrations_path = self.get_migrations_path(self)
-            migrations = os.listdir(os.path.join(new_migrations_path,
+            migrations = os.listdir(os.path.join(self.get_path(),
                                                  'migrations'))
             migration_file = reduce(migrations, self.get_later_migration)
             call(['db-migrate', '-e', 'stretch', 'down', migration_file])
+
+        # Clean up
+        os.remove(rendered_file)
 
     def get_migrations_path(self, plugin):
         path = plugin.options.get('path', '.')
@@ -162,49 +223,28 @@ class GruntPlugin(Plugin):
             self.env.install_package('grunt-cli', '0.1.9', ['-g'])
             self.is_setup = True
 
-    def build(self):
+    def build(self, environment):
         super(GruntPlugin, self).build()
         self.setup()
 
-        grunt_path = self.path
-        path = self.options.get('path')
-        if path:
-            grunt_path = os.path.join(grunt_path, path)
+        path = self.get_path()
 
-        # Check for Gruntfile
-        grunt_file = None
+        # Render Gruntfile
+        contexts = [contexts.create_deploy_context(environment)]
+        context = self.options.get('context')
+        if context:
+            contexts.append(context)
 
-        for file_name in ('Gruntfile.js.jinja', 'Gruntfile.coffee.jinja',
-                          'Gruntfile.js', 'Gruntfile.coffee'):
-            path = os.path.join(grunt_path, file_name)
-            if os.path.exists(path):
-                grunt_file = path
-                break
-
-        if not grunt_file:
-            raise Exception('No Gruntfile found.')
-
-        # Render template
-        dest_file = None
-        if grunt_file.endswith('.jinja'):
-            dest_file = os.path.splitext(grunt_file)[0]
-            contexts = [contexts.create_deploy_context(environment)]
-
-            context = self.options.get('context')
-            if context:
-                contexts.append(context)
-
-            utils.render_template_to_file(grunt_file, dest=dest_file,
-                                          contexts=[context])
+        rendered_file = self.render_template(
+            ('Gruntfile.js', 'Gruntfile.coffee'), path, contexts)
 
         # Run grunt build task
-        os.chdir(grunt_path)
+        os.chdir(path)
         self.env.call_npm(['install'])
         call(['grunt', 'build'])
 
         # Clean up
-        if dest_file:
-            os.remove(dest_file)
+        os.remove(rendered_file)
 
 
 def create_plugin(name, options, parent):

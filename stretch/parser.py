@@ -74,6 +74,7 @@ class SourceParser(object):
         self.path = path
         self.relative_path = '/'
         self.nodes = []
+        self.release = None
 
         # Begin parsing source
         self.parse()
@@ -143,20 +144,22 @@ class SourceParser(object):
 
         return monitored_paths
 
-    def run_build_plugins(self, nodes=None):
+    def run_build_plugins(self, environment, nodes=None):
         for plugin in self.plugins:
             if nodes != None or plugin.parent in nodes:
-                plugin.build()
+                plugin.build(environment)
 
-    def run_pre_deploy_plugins(self, existing, environment, nodes=None):
+    def run_pre_deploy_plugins(self, environment, existing_parser,
+                               nodes=None):
         for plugin in self.plugins:
             if nodes != None or plugin.parent in nodes:
-                plugin.pre_deploy(self, existing, environment)
+                plugin.pre_deploy(environment, self, existing_parser)
 
-    def run_post_deploy_plugins(self, existing, environment, nodes=None):
+    def run_post_deploy_plugins(self, environment, existing_parser,
+                                nodes=None):
         for plugin in self.plugins:
             if nodes != None or plugin.parent in nodes:
-                plugin.pre_deploy(self, existing, environment)
+                plugin.post_deploy(environment, self, existing_parser)
 
 
 def read_file(path):

@@ -24,7 +24,7 @@ class Backend(object):
 
 
 class AutoloadingBackend(Backend):
-    def load(self, existing_parser, parser, changed_files):
+    def load(self, existing_parser, new_parser, changed_files):
         raise NotImplementedError
 
 
@@ -34,9 +34,6 @@ class DockerBackend(AutoloadingBackend):
 
     def load_source(self, source):
         parser = source.parse()
-
-    def autoload(self, existing_parser, parser, changed_files):
-        pass
 
     def create_host(self):
         # Communicate with locally installed agent

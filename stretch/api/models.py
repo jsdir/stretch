@@ -179,15 +179,20 @@ class Environment(models.Model):
         elif isinstance(obj, Source):
             self.deploy_source.delay(source)
 
-    def autoload(self, source, existing_parser, parser, file_events):
+    def autoload(self, source, existing_parser, new_parser, file_events):
+        """
+        The files referenced by the existing parser should be considered
+        nonexistent. In this context, the existing parser should only be used
+        as a reference.
+        """
         autoload_nodes = []
-        monitored = parser.monitored_paths
+        monitored = new_parser.monitored_paths
 
         def path_contains(path, file_path):
             return not os.path.relpath(file_path, path).startswith('..')
 
-        # Autoload node only if an event took place within the node's
-        # monitored path
+        # Autoload node only if an event took
+        # place within the node's monitored path
         for node, paths in monitored:
             for event in file_events:
                 path = event.src_path
@@ -201,12 +206,17 @@ class Environment(models.Model):
 
         if autoload_nodes:
             # Run build plugins
-            parser.run_build_plugins(autoload_nodes)
+            new_parser.run_build_plugins(self, autoload_nodes)
             # Run pre-deploy plugins
-            parser.run_pre_deploy_plugins(autoload_nodes)
-            # Switch /app and agent.restart for nodes that need it
+            new_parser.run_pre_deploy_plugins(self, existing_parser,
+                                              autoload_nodes)
+            for node in autoload_nodes:
+                pass # use node
+                # Switch /app and agent.restart for nodes that need it
+
             # Run post-deploy plugins
-            parser.run_post_deploy_plugins(autoload_nodes)
+            new_parser.run_post_deploy_plugins(self, existing_parser,
+                                               autoload_nodes)
             # stretch.backend
 
     @task
