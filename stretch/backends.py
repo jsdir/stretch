@@ -32,9 +32,6 @@ class DockerBackend(AutoloadingBackend):
     def __init__(self):
         super(DockerBackend, self).__init__()
 
-    def load_source(self, source):
-        parser = source.parse()
-
     def create_host(self):
         # Communicate with locally installed agent
         pass

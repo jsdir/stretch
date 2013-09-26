@@ -68,6 +68,11 @@ class Node(object):
         else:
             self.container = Container(self.path)
 
+        # Find app path
+        app_path = os.path.join(self.container.path, 'app')
+        if not os.path.exists(app_path):
+            app_path = None
+
 
 class SourceParser(object):
     def __init__(self, path):
@@ -134,9 +139,8 @@ class SourceParser(object):
 
         # Find app paths
         for node in self.nodes:
-            app_path = os.path.join(node.container.path, 'app')
-            if os.path.exists(app_path):
-                add_path(node, app_path)
+            if node.app_path:
+                add_path(node, node.app_path)
 
         # Find plugin paths
         for plugin in self.plugins:

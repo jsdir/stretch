@@ -76,8 +76,6 @@ class GitRepositorySource(Source):
             repo = git.Repo(self.path)
             # Pull repository changes
             repo.remotes.origin.pull()
-            #for node_dir in node_dirs:
-            #    self.nodes.append(self.get_node_type(node_dir))
         else:
             log.debug('Cached repo doesn\'t exist')
             log.info('Cloning repo: %s' % self.url)

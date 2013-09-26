@@ -138,7 +138,7 @@ class Host(models.Model):
 
     def add_node(self, node):
         node_instance = NodeInstance(node=node, host=self)
-        self.call_salt('stretch.add_node', node.node_type)
+        self.call_salt('stretch.add_node', node.name)
         node_instance.save()
 
     def stop_all_nodes(self):
@@ -211,13 +211,16 @@ class Environment(models.Model):
             new_parser.run_pre_deploy_plugins(self, existing_parser,
                                               autoload_nodes)
             for node in autoload_nodes:
-                pass # use node
-                # Switch /app and agent.restart for nodes that need it
+                node_obj = Node.objects.get(name=node.name, system=self.system)
+                instances = node_obj.instances
+
+                # Autoloads are done simultaneously because
+                # uptime is not that in development
+                [instance.autoload(node.app_path) for instance in instances]
 
             # Run post-deploy plugins
             new_parser.run_post_deploy_plugins(self, existing_parser,
                                                autoload_nodes)
-            # stretch.backend
 
     @task
     def deploy_release(self, release):
@@ -298,12 +301,12 @@ class Environment(models.Model):
 
         hosts = {}
         for instance in NodeInstance.objects.get(environment=self):
-            host, node_type = instance.host, instance.node.node_type
+            host, node_name = instance.host, instance.node.name
             if hosts.has_key(host):
-                if node_type not in hosts[host]:
-                    hosts[host].append(node_type)
+                if node_name not in hosts[host]:
+                    hosts[host].append(node_name)
             else:
-                hosts[host] = [node_type]
+                hosts[host] = [node_name]
 
         # Transport templates
         # TODO: lock
@@ -359,7 +362,7 @@ class Environment(models.Model):
 
 
 class Node(models.Model):
-    node_type = models.TextField(unique=True)
+    name = models.TextField(unique=True)
     system = models.ForeignKey(System)
 
 
@@ -367,6 +370,13 @@ class NodeInstance(models.Model):
     node = models.ForeignKey(Node)
     host = models.ForeignKey(Host)
     environment = models.ForeignKey(Environment)
+
+    def autoload(self, app_path):
+        # host.salt_call('stretch')
+        self.restart()
+
+    def restart(self):
+        pass
 
 
 class Group(models.Model):
