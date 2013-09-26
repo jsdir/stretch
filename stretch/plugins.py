@@ -155,22 +155,13 @@ class MigrationsPlugin(Plugin):
                     # has no data about it
                     log.info('Migration plugin not found in rollback release. '
                              'Skipping.')
-        elif pre_deploy:
-            # Autoload deploy
-            # Migrate to latest migration
-            self.run_migration(environment, self, None, None)
 
     def run_migration(self, environment, plugin, new_release, existing_release):
         path = plugin.get_path()
 
-        # Check if autoloaded
-        if not new_release:
-            # wipe database and migrate to latest migration in new_parser
-            contexts = [contexts.create_deploy_context(environment)]
-        else:
-            # Use releases for template context
-            contexts = [contexts.create_deploy_context(
-                environment, new_release, existing_release)]
+        # Use releases for template context
+        contexts = [contexts.create_deploy_context(
+            environment, new_release, existing_release)]
 
         # Render database.json
         context = self.options.get('context')
@@ -194,10 +185,6 @@ class MigrationsPlugin(Plugin):
 
         # Clean up
         os.remove(rendered_file)
-
-    def get_migrations_path(self, plugin):
-        path = plugin.options.get('path', '.')
-        return os.path.join(plugin.path, path)
 
     def get_later_migration(self, x, y):
         if int(x.split('-')[0]) > int(y.split('-')[0]):
