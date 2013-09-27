@@ -3,6 +3,7 @@ import shutils
 import json
 import tarfile
 import jsonfield
+import uuidfield
 from django.db import models
 from django_enumfield import enum
 from django.contrib.contenttypes.models import ContentType
@@ -21,6 +22,16 @@ from stretch.sources import Source
 class AuditedModel(models.Model):
     created_at = models.DateTimeField(auto_now_add = True)
     updated_at = models.DateTimeField(auto_now = True)
+
+    class Meta:
+        abstract = True
+
+
+class ChildModel(models.Model):
+    parent_content_type = models.ForeignKey(ContentType)
+    parent_object_id = models.PositiveIntegerField()
+    parent = generic.GenericForeignKey('parent_content_type',
+                                       'parent_object_id')
 
     class Meta:
         abstract = True
@@ -126,18 +137,13 @@ class Release(AuditedModel):
         return release
 
 
-class Host(models.Model):
+class Host(ChildModel):
     fqdn = models.TextField(unique=True)
     hostname = models.TextField()
     managed = models.BooleanField()
 
-    parent_content_type = models.ForeignKey(ContentType)
-    parent_object_id = models.PositiveIntegerField()
-    parent = generic.GenericForeignKey('parent_content_type',
-                                       'parent_object_id')
-
     def add_node(self, node):
-        node_instance = NodeInstance(node=node, host=self)
+        node_instance = NodeInstance(node=node, parent=self)
         self.call_salt('stretch.add_node', node.name)
         node_instance.save()
 
@@ -212,11 +218,11 @@ class Environment(models.Model):
                                               autoload_nodes)
             for node in autoload_nodes:
                 node_obj = Node.objects.get(name=node.name, system=self.system)
-                instances = node_obj.instances
 
                 # Autoloads are done simultaneously because
-                # uptime is not that in development
-                [instance.autoload(node.app_path) for instance in instances]
+                # uptime is not that important in development
+                for instance in node_obj.instances:
+                    instance.autoload(node.app_path)
 
             # Run post-deploy plugins
             new_parser.run_post_deploy_plugins(self, existing_parser,
@@ -366,26 +372,28 @@ class Node(models.Model):
     system = models.ForeignKey(System)
 
 
-class NodeInstance(models.Model):
+class NodeInstance(ChildModel):
+    id = uuidfield.UUIDField(auto=True, primary_key=True)
     node = models.ForeignKey(Node)
-    host = models.ForeignKey(Host)
     environment = models.ForeignKey(Environment)
 
     def autoload(self, app_path):
-        # host.salt_call('stretch')
+        group = self.parent
+        host = group.parent
+        host.call_salt('stretch.autoload', self.pk, app_path)
+        # restart
         self.restart()
 
     def restart(self):
         pass
 
 
-class Group(models.Model):
+class Group(ChildModel):
     name = models.TextField(unique=True)
     environment = models.ForeignKey(Environment)
     minimum_nodes = models.IntegerField(default=1)
     maximum_nodes = models.IntegerField(default=None)
     node = models.ForeignKey(Node)
-    hosts = generic.GenericRelation(Host)
 
     def scale_up(self, amount):
         self.check_valid_amount(self.host_count + amount)

@@ -31,14 +31,15 @@ class AutoloadingBackend(Backend):
 class DockerBackend(AutoloadingBackend):
     def __init__(self):
         super(DockerBackend, self).__init__()
+        # All hosts in the docker backend are unmanaged.
+        self.host_exception = Exception(
+            'DockerBackend only uses unmanaged hosts.')
 
     def create_host(self):
-        # Communicate with locally installed agent
-        pass
+        raise self.host_exception
 
     def delete_host(self, host):
-        # Communicate with locally installed agent
-        pass
+        raise self.host_exception
 
 
 class RackspaceBackend(Backend):
