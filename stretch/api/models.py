@@ -54,87 +54,65 @@ class Release(AuditedModel):
     sha = models.CharField('SHA', max_length=40)
     system = models.ForeignKey(System)
 
-    def __init__(self, system):
+    def __init__(self, system, source_options):
         self.name = utils.generate_memorable_name()
         self.sha = utils.generate_random_hex(40)
         self.system = system
 
-    @classmethod
-    def create_from_sources(cls, system, sources):
-        """
-        Release.create_from_sources(system, {git_source: {'ref': new_ref}})
-
-        sources = {
-            <Source>: {'ref': 'someref'},
-        }
-        """
-        # Create release
-        release = cls(system)
+        # Create from source
 
         # Create buffers
         buffers = {}
-        release_buffer_path = os.path.join(settings.TEMP_DIR, release.sha)
+        release_buffer_path = os.path.join(settings.TEMP_DIR, self.sha)
         for name in ('release', 'source'):
             buffer_path = os.path.join(release_buffer_path, name)
             utils.clear_path(buffer_path)
             buffers[name] = buffer_path
 
-        # Pull from sources
-        source_config = {}
-
         # Acquire lock
         lock = utils.lock('source')
         with lock:
-            for source, pull_options in sources:
-                source.pull(pull_options)
-                source_path = source.get_path()
+            source = stretch.source
+            source.pull(source_options)
+            source_path = source.get_path()
 
-                # Copy source into source buffer
-                dir_util.copy_tree(source_path, buffers['source'])
+            # Copy source into source buffer
+            dir_util.copy_tree(source_path, buffers['source'])
 
-                # Create BuildParser
-                source = parser.SourceParser(buffers['source'], release, True)
+            # Create BuildParser
+            new_parser = parser.SourceParser(buffers['source'], release, True)
 
-                # Decrypt
-                source.decrypt_secrets()
+            # Compile and merge release configuration
+            source_config = new_parser.get_release_config()
 
-                # Compile and merge release configuration
-                utils.update(source_config, source.get_release_config())
-
-                # Merge to release buffer
-                source.copy_to_buffer(buffers['release'])
+            # Merge to release buffer
+            new_parser.copy_to_buffer(buffers['release'])
 
         # Archive the release
-        release_dir = os.path.join(settings.DATA_DIR, 'releases', release.sha)
+        release_dir = os.path.join(settings.DATA_DIR, 'releases', self.sha)
         utils.makedirs(release_dir)
 
         # Write release configuration
-        with open(os.path.join(release_dir, '%s.json' % release.sha)) as f:
+        with open(os.path.join(release_dir, '%s.json' % self.sha)) as f:
             f.write(json.dumps(source_config))
 
         # Tar release buffer
-        tar_path = os.path.join(release_dir, '%s.tar.gz' % release.sha)
+        tar_path = os.path.join(release_dir, '%s.tar.gz' % self.sha)
         tar_file = tarfile.open(tar_path, 'w:gz')
         tar_file.add(buffers['release'], '/')
         tar_file.close()
 
         # Build docker images
-        release_source = parser.SourceParser(buffers['release'], release)
-        release_source.build_and_push(release.system, release.sha)
-
-        # Run build plugins
-        release_source.run_build_plugins()
+        new_parser.build_and_push(self.system, self.sha)
 
         # Clear buffers
         shutils.rmtree(release_buffer_path)
 
-        release.save()
+        self.save()
 
         # Push release to all auto-deploying environments
         for environment in Environment.objects.filter(auto_deploy=True):
-            environment.deploy(release)
-
-        return release
+            environment.deploy(self)
 
 
 class Host(ChildModel):
@@ -291,6 +269,9 @@ class Environment(models.Model):
         if existing_release:
             existing_source = parser.SourceParser(buffers['existing'],
                                                   existing_release)
+
+        # Run build plugins unique
+        new_parser.run_build_plugins(self)
 
         # Run pre-deploy plugins
         update_status(2, 'Running pre-deploy plugins')

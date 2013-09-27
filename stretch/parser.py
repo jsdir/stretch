@@ -148,6 +148,9 @@ class SourceParser(object):
 
         return monitored_paths
 
+    def build_and_push(self, system, sha):
+        [node.build_and_push(system, sha) for node in self.nodes]
+
     def run_build_plugins(self, environment, nodes=None):
         for plugin in self.plugins:
             if nodes != None or plugin.parent in nodes:
@@ -164,6 +167,44 @@ class SourceParser(object):
         for plugin in self.plugins:
             if nodes != None or plugin.parent in nodes:
                 plugin.post_deploy(environment, self, existing_parser)
+
+    def copy_to_buffer(self, path):
+        dir_util.copy_tree(self.path, path)
+
+    def get_release_config(self):
+        """
+        Return configuration that can be easily reconstructed
+
+        If individual:
+            Returns: {
+                nodes: {
+                    node_name: config_source,
+                }
+            }
+        If multiple:
+            Returns: {
+                global: config_source,
+                nodes: {
+                    node_name: config_source,
+                    node_name: config_source
+                }
+            }
+        """
+        config = {}
+
+        if self.multiple_nodes:
+            config['global'] = {'config': ''}
+            config_file = self.build_files.get('config')
+            if config_file:
+                config['global']['config'] = read_file(config_file)
+
+        for node in self.nodes:
+            config['nodes'][node.name] = {'config': ''}
+            config_file = node.build_files.get('config')
+            if config_file:
+                config['nodes'][node.name]['config'] = read_file(config_file)
+
+        return config
 
 
 def read_file(path):
