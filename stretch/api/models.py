@@ -381,8 +381,6 @@ class NodeInstance(ChildModel):
         group = self.parent
         host = group.parent
         host.call_salt('stretch.autoload', self.pk, app_path)
-        # restart
-        self.restart()
 
     def restart(self):
         pass
