@@ -119,6 +119,8 @@ class Host(ChildModel):
     fqdn = models.TextField(unique=True)
     hostname = models.TextField()
     managed = models.BooleanField()
+    groups = generic.GenericRelation(Group)
+    instances = generic.GenericRelation(NodeInstance)
 
     def add_node(self, node):
         node_instance = NodeInstance(node=node, parent=self)
@@ -153,6 +155,7 @@ class Environment(models.Model):
     release = models.ForeignKey(Release)
     auto_deploy = models.BooleanField(default=False)
     hosts = generic.GenericRelation(Host)
+    groups = generic.GenericRelation(Group)
     system = models.ForeignKey(System)
 
     def deploy(self, obj):
@@ -373,6 +376,8 @@ class Group(ChildModel):
     minimum_nodes = models.IntegerField(default=1)
     maximum_nodes = models.IntegerField(default=None)
     node = models.ForeignKey(Node)
+    hosts = generic.GenericRelation(Host)
+    instances = generic.GenericRelation(NodeInstance)
 
     def scale_up(self, amount):
         self.check_valid_amount(self.host_count + amount)
