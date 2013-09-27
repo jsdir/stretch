@@ -103,7 +103,7 @@ class Release(AuditedModel):
         tar_file.close()
 
         # Build docker images
-        new_parser.build_and_push(self.system, self.sha)
+        new_parser.build_and_push(self)
 
         # Clear buffers
         shutils.rmtree(release_buffer_path)
