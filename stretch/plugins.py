@@ -50,7 +50,7 @@ class Plugin(object):
     def setup(self):
         raise NotImplementedError
 
-    def build(self):
+    def build(self, environment):
         log.debug('%s build hook triggered' % self)
 
     def pre_deploy(self, environment, new_parser, existing_parser):

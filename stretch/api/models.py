@@ -212,7 +212,7 @@ class Environment(models.Model):
     @task
     def deploy_release(self, release):
 
-        total_steps = 7
+        total_steps = 8
 
         def pull_release(release, path, pull_conf=False):
             sha = release.sha
@@ -267,27 +267,28 @@ class Environment(models.Model):
         release_config = pull_release(new_release, buffers['new'], True)
 
         # Parse sources
-        new_source = parser.SourceParser(buffers['new'], new_release)
-        existing_source = None
+        new_parser = parser.SourceParser(buffers['new'], new_release)
+        existing_parser = None
         if existing_release:
-            existing_source = parser.SourceParser(buffers['existing'],
+            existing_parser = parser.SourceParser(buffers['existing'],
                                                   existing_release)
 
-        # Run build plugins unique
+        # Run build plugins
+        update_status(2, 'Running build plugins')
         new_parser.run_build_plugins(self)
 
         # Run pre-deploy plugins
-        update_status(2, 'Running pre-deploy plugins')
-        new_source.run_pre_deploy_plugins(existing_source, self)
+        update_status(3, 'Running pre-deploy plugins')
+        new_parser.run_pre_deploy_plugins(self, existing_parser)
 
         # Parse release configuration
-        update_status(3, 'Parsing release configuration')
-        node_configs = parser.parse_release_config(release_config,
+        update_status(4, 'Parsing release configuration')
+        node_configs = parser.parse_release_config(self, release_config,
                                                    new_release,
-                                                   existing_release, self)
+                                                   existing_release)
 
         # Push images and configurations to nodes
-        update_status(4, 'Pushing images and configurations to nodes')
+        update_status(5, 'Pushing images and configurations to nodes')
 
         hosts = {}
         for instance in NodeInstance.objects.get(environment=self):
@@ -304,7 +305,7 @@ class Environment(models.Model):
         templates_path = os.path.join(settings.CACHE_DIR, 'templates',
                                       local_path)
         utils.clear_path(templates_path)
-        new_source.mount_templates(templates_path)
+        new_parser.mount_templates(templates_path)
 
         # Pull release
         fqdns = map(lambda x: x.fqdn, hosts.keys())
@@ -318,10 +319,10 @@ class Environment(models.Model):
         shutil.rmtree(templates_path)
 
         # Change release
-        update_status(5, 'Changing release')
+        update_status(6, 'Changing release')
 
         # Switch buffers
-        update_status(6, 'Switching buffers')
+        update_status(7, 'Switching buffers')
 
         # Clear existing buffer
         utils.clear_path(buffers['existing'])
@@ -329,12 +330,13 @@ class Environment(models.Model):
         utils.clear_path(buffers['new'])
 
         # Run post-deploy plugins
-        update_status(7, 'Running post-deploy plugins')
-        new_source.run_post_deploy_plugins(existing_source, self)
+        update_status(8, 'Running post-deploy plugins')
+        new_parser.run_post_deploy_plugins(self, existing_parser)
 
     @task
     def deploy_source(self, source):
         backend = stretch.backend
+
 
     def add_host(self, node):
         host = backend.create_host()

@@ -23,3 +23,6 @@ else:
 if isinstance(source, AutoloadableSource) and source.autoload:
     if not isinstance(backend, AutoloadingBackend):
         raise Exception('Backend incompatible with autoloadable source.')
+
+    # Initial deploy
+    source.deploy()

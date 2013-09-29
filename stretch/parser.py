@@ -157,11 +157,11 @@ class Node(object):
 
 
 class SourceParser(object):
-    def __init__(self, path):
+    def __init__(self, path, release=None):
         self.path = path
         self.relative_path = '/'
         self.nodes = []
-        self.release = None
+        self.release = release
         self.containers = []
 
         # Begin parsing source
@@ -273,19 +273,17 @@ class SourceParser(object):
                 }
             }
         """
-        config = {}
+        config = {'nodes': {}}
 
         if self.multiple_nodes:
-            config['global'] = {'config': ''}
             config_file = self.build_files.get('config')
             if config_file:
-                config['global']['config'] = read_file(config_file)
+                config['global'] = read_file(config_file)
 
         for node in self.nodes:
-            config['nodes'][node.name] = {'config': ''}
             config_file = node.build_files.get('config')
             if config_file:
-                config['nodes'][node.name]['config'] = read_file(config_file)
+                config['nodes'][node.name] = read_file(config_file)
 
         return config
 
@@ -336,3 +334,53 @@ def get_build_files(path):
         build_files['config'] = config_path
 
     return build_files
+
+def parse_release_config(config, environment, new_release, existing_release):
+
+    def get_config(data):
+        contexts = [contexts.create_deploy_context(environment, new_release,
+                                                   existing_release)]
+        config = utils.render_template(data, contexts)
+        return yaml.load(config)
+
+    result = {}
+    global_config = {}
+    nodes_config = {}
+    global_data = config.get('global')
+
+    if global_data:
+        # Apply global configuration
+        for block in get_config(global_data).iteritems():
+            block_config = block.get('config', {})
+            block_nodes = block.get('nodes', [])
+
+            if block_nodes:
+                # Local block
+                for node in block_nodes:
+                    if nodes_config.has_key(node):
+                        utils.update(nodes_config[node], block_config)
+                    else:
+                        nodes_config[node] = block_config
+            else:
+                # Global block
+                utils.update(global_config, block_config)
+
+    # Apply node configuration
+    for name, data in nodes_config.iteritems():
+        node_config = {}
+        utils.update(node_config, global_config)
+        utils.update(node_config, data)
+        result[name] = node_config
+
+    for name, data in config.get('nodes').iteritems():
+        node_config = {}
+        utils.update(node_config, global_config)
+        utils.update(node_config, nodes_config.get(name, {}))
+        utils.update(node_config, (get_config(data) or {}))
+
+        if result.has_key(name):
+            utils.update(result[name], node_config)
+        else:
+            result[name] = node_config
+
+    return result

@@ -14,6 +14,7 @@ from stretch.models import Environment
 
 
 log = logging.getLogger('stretch')
+auto_deploy_environments = Environment.objects.filter(auto_deploy=True)
 
 
 class Source(object):
@@ -48,6 +49,10 @@ class AutoloadableSource(Source):
 
     def do_monitor(self):
         raise NotImplementedError
+
+    def deploy(self):
+        for environment in auto_deploy_environments:
+            environment.deploy(self)
 
 
 class GitRepositorySource(Source):
@@ -130,7 +135,7 @@ class FileSystemSource(AutoloadableSource):
     def on_files_change(self, file_events):
         self.parse()
 
-        for environment in Environment.objects.filter(auto_deploy=True):
+        for environment in auto_deploy_environments:
             environment.autoload(self, self.existing_parser, self.parser,
                                  file_events)
 
