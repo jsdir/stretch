@@ -6,6 +6,8 @@ import gnupg
 import docker
 import logging
 from distutils import dir_util
+from django.conf import settings
+from StringIO import StringIO
 
 from stretch import utils, contexts
 from stretch.plugins import create_plugin
@@ -17,33 +19,112 @@ docker_client = docker.Client(base_url='unix://var/run/docker.sock',
 
 
 class Container(object):
-    def __init__(self, path, parent=None, ancestor_paths=[]):
-        self.from_container = None
-        self.path = os.path.realpath(path)
+    def __init__(self, path, containers, parent, ancestor_paths):
+        self.base_container = None
+        self.path = path
         self.parent = parent
+        self.built = False
 
         # Check for reference loop
         if self.path in ancestor_paths:
             raise Exception('Encountered container reference loop.')
         ancestor_paths.append(self.path)
 
+        # Find Dockerfile
+        self.dockerfile_path = os.path.join(self.path, 'Dockerfile')
+        if not os.path.exists(self.dockerfile_path):
+            raise Exception('Dockerfile not found.')
+
         # Parse and find base containers
         container_path = os.path.join(self.path, 'container.yml')
         if os.path.exists(container_path):
             container_data = get_data(container_path)
 
-            from_path = container_data.get('from')
-            if from_path:
-                from_container_path = os.path.join(self.path, from_path)
-                self.from_container = Container(from_container_path, self,
-                                                ancestor_paths)
+            base_path = container_data.get('from')
+            if base_path:
+                base_container_path = os.path.join(self.path, base_path)
+                self.base_container = Container.create(
+                    base_container_path, containers, self, ancestor_paths)
+
+    @classmethod
+    def create(cls, path, containers, parent=None, ancestor_paths=[]):
+        path = os.path.realpath(path)
+
+        for container in containers:
+            if container.path == path:
+                return container
+
+        return cls(path, containers, parent, ancestor_paths)
+
+    def build(self, release, node):
+        if not self.built:
+            # Recursively build and push base containers
+            if self.base_container:
+                self.base_container.build(release, node)
+
+            # Generate Dockerfile
+            dockerdata = read_file(self.dockerfile_path)
+
+            added_paths = (
+                'ADD files /usr/share/stretch/files\n'
+                'ADD app /usr/share/stretch/app\n'
+            )
+
+            if self.base_container:
+                # Add paths at beginning
+                dockerdata = ('FROM %s\n' % self.base_container.tag) +
+                             added_paths + dockerdata
+            else:
+                # Add paths after FROM declaration
+                lines = []
+                from_found = False
+
+                for line in dockerdata.split('\n'):
+                    lines.append(line)
+                    if (not from_found and
+                            line.strip().lower().startswith('from')):
+                        lines.append(added_paths)
+                        from_found = True
+
+                if not from_found:
+                    raise Exception('No origin image defined.')
+
+                dockerdata = '\n'.join(lines)
+
+            # Remove EXPOSE declarations since ports are handled by stretch
+            dockerdata = '\n'.join([l for l in dockerdata.split('\n')
+                          if not l.strip().lower().startswith('expose')])
+
+            # Create and use generated Dockerfile
+            dockerfile = StringIO(dockerdata)
+
+            # Generate tag
+            if self.parent:
+                # Base container
+                self.tag = 'stretch_base/%s,%s' % (
+                    release.system.id, utils.generate_random_hex(16))
+            else:
+                # Node container
+                self.tag = '%s/%s,%s#%s' % (settings.REGISTRY_URL,
+                    release.system.id, node.id, release.sha)
+
+            # Build image
+            docker_client.build(self.path, self.tag, fileobj=dockerfile)
+
+            # Push node containers to registry
+            if not self.parent:
+                docker_client.push(self.tag)
+
+            # TODO: clean up base images
+            self.built = True
 
 
 class Node(object):
-    def __init__(self, path, relative_path, name=None):
+    def __init__(self, path, relative_path, parser, name=None):
         self.path = os.path.realpath(path)
         self.relative_path = relative_path
         self.name = name
+        self.parser = parser
 
         # Begin parsing node
         self.parse()
@@ -64,48 +145,15 @@ class Node(object):
         # Find containers
         container = self.stretch_data.get('container')
         if container_path:
-            self.container = Container(os.path.join(self.path, container))
+            path = os.path.join(self.path, container)
         else:
-            self.container = Container(self.path)
+            path = self.path
+        self.container = Container.create(path, self.parser.containers)
 
         # Find app path
         app_path = os.path.join(self.container.path, 'app')
         if not os.path.exists(app_path):
             app_path = None
-
-    def build_and_push(self, release):
-        system, sha = release.system, release.sha
-        # Build and plush series of containers
-        #tag = self.build_container(self.container_path, self.name, system, sha)
-        #docker_client.push(tag)
-
-    def build_container(self, path, image_name, system, sha):
-        # Build dependencies
-        container_data = None
-        container_path = os.path.join(path, 'container.yml')
-        if os.path.exists(container_path):
-            container_data = get_data(container_path)
-            base_path = container_data.get('from')
-
-            if base_path:
-                if path == base_path:
-                    raise Exception('Encountered container reference loop.')
-
-                self.build_container(base_path, None, system.name, sha)
-
-        if image_name:
-            tag = '%s/%s' % (system.name, image_name)
-            tag = '%s:%s' % (tag, sha)
-        else:
-            if not container_data:
-                raise Exception('No container.yml for dependency.')
-            name = container_data.get('name')
-            if not name:
-                raise Exception('No name defined for container.')
-            tag = '%s/%s' % (system.name, name)
-
-        docker_client.build(path, tag)
-        return tag
 
 
 class SourceParser(object):
@@ -114,6 +162,7 @@ class SourceParser(object):
         self.relative_path = '/'
         self.nodes = []
         self.release = None
+        self.containers = []
 
         # Begin parsing source
         self.parse()
@@ -137,11 +186,11 @@ class SourceParser(object):
 
             for name, path in nodes.iteritems():
                 node_path = os.path.join(self.path, path)
-                self.nodes.append(Node(node_path, path, name))
+                self.nodes.append(Node(node_path, path, self, name))
         else:
             # Individual node declaration used
             self.multiple_nodes = False
-            self.nodes.append(Node(self.path, '/'))
+            self.nodes.append(Node(self.path, '/', self))
 
     def get_plugins(self):
         log.info('Loading plugins...')
@@ -182,8 +231,8 @@ class SourceParser(object):
 
         return monitored_paths
 
-    def build_and_push(self, system, sha):
-        [node.build_and_push(system, sha) for node in self.nodes]
+    def build_and_push(self, release):
+        [node.container.build(release, node) for node in self.nodes]
 
     def run_build_plugins(self, environment, nodes=None):
         for plugin in self.plugins:
