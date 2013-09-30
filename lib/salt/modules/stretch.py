@@ -25,7 +25,8 @@ def remove_instance(instance_id):
     pass
 
 
-def pull(release_sha, registry_url, system_name, templates_path):
+def pull(options):
+    release_sha, registry_url, system_id, templates_path
     # (along with templates from the fileserver)
     path = os.path.join('salt://templates', templates_path)
     __salt__['cp.get_dir'](path, dest)
@@ -33,11 +34,19 @@ def pull(release_sha, registry_url, system_name, templates_path):
     # Pull release image for every node under the agent/system
 
     for node in _collected_nodes():
-        image = '%s/%s/%s:%s' % (registry_url, system_name, node_type,
+        image = '%s/%s/%s:%s' % (registry_url, system_id, node_type,
                                  release_sha)
         docker_client.pull(image)
 
         # Save image_path to cache file or state
+
+def pull_and_deploy():
+    pass
+
+
+def deploy(release_sha):
+    pass
+
 
 def autoload(instance_id, app_path):
     # Check for user-defined autoload.sh

@@ -261,15 +261,15 @@ class SourceParser(object):
         If individual:
             Returns: {
                 nodes: {
-                    node_name: config_source,
+                    node.pk: config_source,
                 }
             }
         If multiple:
             Returns: {
                 global: config_source,
                 nodes: {
-                    node_name: config_source,
-                    node_name: config_source
+                    node.pk: config_source,
+                    node.pk: config_source
                 }
             }
         """
@@ -283,29 +283,26 @@ class SourceParser(object):
         for node in self.nodes:
             config_file = node.build_files.get('config')
             if config_file:
-                config['nodes'][node.name] = read_file(config_file)
+                config['nodes'][str(node.pk)] = read_file(config_file)
 
         return config
 
     def mount_templates(self, path):
         """
         path/
-            node_name/
+            node.pk/
                 template1
                 template2
-            node_name/
+            node.pk/
                 template1
                 template2
-        """
         """
         for node in self.nodes:
-            dest_path = os.path.join(path, node.name)
+            dest_path = os.path.join(path, str(node.pk))
             utils.clear_path(dest_path)
-            templates_path = os.path.join(node.container_path, 'templates')
+            templates_path = os.path.join(node.container.path, 'templates')
             if os.path.exists(templates_path):
                 dir_util.copy_tree(templates_path, dest_path)
-        """
-        pass
 
 
 def read_file(path):

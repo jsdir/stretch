@@ -264,7 +264,7 @@ class Environment(models.Model):
         utils.clear_path(buffers['new'])
 
         # Pull new release
-        release_config = pull_release(new_release, buffers['new'], True)
+        release_config_data = pull_release(new_release, buffers['new'], True)
 
         # Parse sources
         new_parser = parser.SourceParser(buffers['new'], new_release)
@@ -283,43 +283,58 @@ class Environment(models.Model):
 
         # Parse release configuration
         update_status(4, 'Parsing release configuration')
-        node_configs = parser.parse_release_config(self, release_config,
+        node_configs = parser.parse_release_config(self, release_config_data,
                                                    new_release,
                                                    existing_release)
+
+        # Release node names with pks
+        release_config = {}
+        for node_name, node_config in node_configs.iteritems():
+            node_pk = str(Node.objects.get(name=node_name).pk)
+            release_config[node_pk] = node_name
 
         # Push images and configurations to nodes
         update_status(5, 'Pushing images and configurations to nodes')
 
         hosts = {}
-        for instance in NodeInstance.objects.get(environment=self):
-            host, node_name = instance.host, instance.node.name
+        instances = []
+        for instance in NodeInstance.objects.filter(environment=self):
+            host, node_pk = instance.get_host(), str(instance.node.pk)
+            instances.append((instance, host.fqdn))
             if hosts.has_key(host):
-                if node_name not in hosts[host]:
-                    hosts[host].append(node_name)
+                if node_pk not in hosts[host]:
+                    hosts[host].append(node_pk)
             else:
-                hosts[host] = [node_name]
+                hosts[host] = [node_pk]
 
-        # Transport templates
-        # TODO: lock
-        local_path = os.path.join(self.system.name, self.name)
+        # Mount templates
+        local_path = '%s/%s' % (self.system.pk, self.pk)
         templates_path = os.path.join(settings.CACHE_DIR, 'templates',
                                       local_path)
         utils.clear_path(templates_path)
         new_parser.mount_templates(templates_path)
 
         # Pull release
-        fqdns = map(lambda x: x.fqdn, hosts.keys())
-        params = [new_release.sha, settings.REGISTRY_URL, self.system.name,
-                  local_path]
-        salt_client.cmd_batch(fqdns, 'stretch.pull', params,
-                              batch=str(settings.BATCH_SIZE),
-                              expr_form='list')
+        fqdns = [host.fqdn for host in hosts.keys()]
+        list(salt_client.cmd_batch(fqdns, 'stretch.pull', [{
+            'release_sha': new_release.sha,
+            'release_name': new_release.name,
+            'registry_url': settings.REGISTRY_URL,
+            'image_path': local_path,
+            'config': release_config
+        }], batch=str(settings.BATCH_SIZE), expr_form='list'))
 
-        # Clear template mount after all nodes have pulled
+        # Unmount templates
         shutil.rmtree(templates_path)
 
-        # Change release
-        update_status(6, 'Changing release')
+        # Deploy to nodes
+        update_status(6, 'Deploying to nodes')
+
+        # TODO: have this run in batch size
+        for instance, fqdn in instances:
+            instance.deactivate()
+            salt_client.cmd(fqdn, 'stretch.deploy', [new_release.sha])
+            instance.activate()
 
         # Switch buffers
         update_status(7, 'Switching buffers')
@@ -335,8 +350,7 @@ class Environment(models.Model):
 
     @task
     def deploy_source(self, source):
-        backend = stretch.backend
-
+        pass
 
     def add_host(self, node):
         host = backend.create_host()
@@ -369,6 +383,18 @@ class NodeInstance(ChildModel):
         host.call_salt('stretch.autoload', self.pk, app_path)
 
     def restart(self):
+        pass
+
+    def get_host(self):
+        if isinstance(self.parent, Host):
+            return self.parent
+        else:
+            return self.parent.parent
+
+    def deactivate(self):
+        pass
+
+    def activate(self):
         pass
 
 
