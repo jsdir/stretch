@@ -155,6 +155,9 @@ class MigrationsPlugin(Plugin):
                     # has no data about it
                     log.info('Migration plugin not found in rollback release. '
                              'Skipping.')
+        else:
+            # Source deploy
+            self.run_migration(environment, self, None, None)
 
     def run_migration(self, environment, plugin, new_release, existing_release):
         path = plugin.get_path()

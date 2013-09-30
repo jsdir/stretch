@@ -101,12 +101,14 @@ class Container(object):
             # Generate tag
             if self.parent:
                 # Base container
-                self.tag = 'stretch_base/%s,%s' % (
-                    release.system.id, utils.generate_random_hex(16))
-            else:
+                self.tag = 'stretch_base/%s' % utils.generate_random_hex(16)
+            elif release:
                 # Node container
-                self.tag = '%s/%s,%s#%s' % (settings.REGISTRY_URL,
-                    release.system.id, node.id, release.sha)
+                self.tag = '%s/%s#%s' % (settings.REGISTRY_URL, node.pk,
+                    release.sha)
+            else:
+                # Local container
+                self.tag = 'stretch/%s' % node.pk
 
             # Build image
             docker_client.build(self.path, self.tag, fileobj=dockerfile)
@@ -233,6 +235,9 @@ class SourceParser(object):
 
     def build_and_push(self, release):
         [node.container.build(release, node) for node in self.nodes]
+
+    def build_local(self):
+        [node.container.build(None, node) for node in self.nodes]
 
     def run_build_plugins(self, environment, nodes=None):
         for plugin in self.plugins:

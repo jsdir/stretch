@@ -51,6 +51,7 @@ class AutoloadableSource(Source):
         raise NotImplementedError
 
     def deploy(self):
+        self.parse()
         for environment in auto_deploy_environments:
             environment.deploy(self)
 
