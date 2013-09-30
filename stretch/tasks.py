@@ -1,6 +1,4 @@
-from celery import task
-
-from stretch import models
+from celery import task, models
 
 
 @task
