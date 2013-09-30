@@ -300,7 +300,7 @@ class Environment(models.Model):
             'release_name': new_release.name,
             'registry_url': settings.REGISTRY_URL,
             # TODO: is template_path even needed when using pks?
-            'template_path': local_path,
+            # 'template_path': local_path,
             'config': release_config
         }], batch=str(settings.BATCH_SIZE), expr_form='list'))
 
@@ -313,7 +313,7 @@ class Environment(models.Model):
         # TODO: have this run in batch size
         for instance, fqdn in instances:
             instance.deactivate()
-            salt_client.cmd(fqdn, 'stretch.deploy', [new_release.sha])
+            salt_client.cmd(fqdn, 'stretch.deploy', [instance.pk, new_release.sha])
             instance.activate()
 
         # Switch buffers
@@ -347,7 +347,7 @@ class Environment(models.Model):
         fqdns = [host.fqdn for host in hosts.keys()]
         list(salt_client.cmd_batch(fqdns, 'stretch.autoload_deploy', [{
             # TODO: is template_path even needed when using pks?
-            'template_path': local_path,
+            # 'template_path': local_path,
             'config': release_config
         }], batch=str(settings.BATCH_SIZE), expr_form='list'))
 
@@ -425,9 +425,7 @@ class NodeInstance(ChildModel):
     environment = models.ForeignKey(Environment)
 
     def autoload(self, app_path):
-        group = self.parent
-        host = group.parent
-        host.call_salt('stretch.autoload', self.pk, app_path)
+        self.get_host().call_salt('stretch.autoload', self.pk, app_path)
 
     def get_host(self):
         if isinstance(self.parent, Host):

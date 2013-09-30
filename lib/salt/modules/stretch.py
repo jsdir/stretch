@@ -3,6 +3,8 @@ import errno
 import docker
 from subprocess import call
 
+# On startup
+# Go through instance database and run
 
 docker_client = docker.Client(base_url='unix://var/run/docker.sock',
                               version='1.4')
@@ -17,17 +19,34 @@ class Container(object):
         pass
 
 
-def add_instance(instance_id, node_name, ports):
+class Instance(object):
+    def __init__(self, instance_id):
+        self.id = instance_id
+
+    def restart(self):
+        pass
+
+
+def add_instance(instance_id, node_id, node_name, environment_id, ports):
+    # Add instance to global instance table
+    # Initialize instance
     pass
 
 
 def remove_instance(instance_id):
+    # Stop instance
+    # Remove <Instance> to global instance table
     pass
 
 
 def pull(options):
-    release_sha, registry_url, system_id, templates_path
+    release_sha = options.get('release_sha')
+    release_name = options.get('release_name')
+    registry_url = options.get('registry_url')
+    config = release.get('config')
+
     # (along with templates from the fileserver)
+    # Pull to template directory
     path = os.path.join('salt://templates', templates_path)
     __salt__['cp.get_dir'](path, dest)
 
@@ -40,12 +59,21 @@ def pull(options):
 
         # Save image_path to cache file or state
 
-def pull_and_deploy():
-    pass
+
+def deploy(instance_id, release_sha, environment_id, environment_name):
+    container = Container(instance) # get instance_id
+    # docker stop container.id
+    # docker run tag -ports -mount rendered templates
 
 
-def deploy(release_sha):
-    pass
+def autoload_deploy(options):
+    # This is a deploy without the release
+    config = options.config
+    environment = options.environment
+
+    for instance.environment == environment:
+        # apply templates
+
 
 
 def autoload(instance_id, app_path):
@@ -60,6 +88,7 @@ def autoload(instance_id, app_path):
     if code == 3:
         # No user-defined autoload.sh, restart container
         container.restart()
+
 
 def makedirs(path):
     try:
