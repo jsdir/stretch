@@ -444,6 +444,10 @@ class NodeInstance(ChildModel):
         pass
 
 
+class LoadBalancer(models.Model):
+    port = models.IntegerField()
+
+
 class Group(ChildModel):
     name = models.TextField(unique=True)
     environment = models.ForeignKey(Environment)
@@ -452,6 +456,7 @@ class Group(ChildModel):
     node = models.ForeignKey(Node)
     hosts = generic.GenericRelation(Host)
     instances = generic.GenericRelation(NodeInstance)
+    load_balancer = models.OneToOneField(LoadBalancer)
 
     unique_together = ('name', 'environment')
 
