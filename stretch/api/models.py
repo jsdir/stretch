@@ -50,7 +50,7 @@ class Service(models.Model):
 
 
 class Release(AuditedModel):
-    name = models.TextField(unique=True)
+    name = models.TextField()
     sha = models.CharField('SHA', max_length=40)
     system = models.ForeignKey(System)
 
@@ -151,12 +151,14 @@ class Host(ChildModel):
 
 
 class Environment(models.Model):
-    name = models.TextField(unique=True)
+    name = models.TextField()
     release = models.ForeignKey(Release)
     auto_deploy = models.BooleanField(default=False)
     hosts = generic.GenericRelation(Host)
     groups = generic.GenericRelation(Group)
     system = models.ForeignKey(System)
+
+    unique_together = ('name', 'system')
 
     def deploy(self, obj):
         if isinstance(obj, Release):
@@ -415,8 +417,10 @@ class Environment(models.Model):
 
 
 class Node(models.Model):
-    name = models.TextField(unique=True)
+    name = models.TextField()
     system = models.ForeignKey(System)
+
+    unique_together = ('name', 'system')
 
 
 class NodeInstance(ChildModel):
@@ -448,6 +452,8 @@ class Group(ChildModel):
     node = models.ForeignKey(Node)
     hosts = generic.GenericRelation(Host)
     instances = generic.GenericRelation(NodeInstance)
+
+    unique_together = ('name', 'environment')
 
     def scale_up(self, amount):
         self.check_valid_amount(self.host_count + amount)
