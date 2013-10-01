@@ -72,8 +72,8 @@ class Container(object):
 
             if self.base_container:
                 # Add paths at beginning
-                dockerdata = ('FROM %s\n' % self.base_container.tag) +
-                             added_paths + dockerdata
+                dockerdata = (('FROM %s\n' % self.base_container.tag) +
+                             added_paths + dockerdata)
             else:
                 # Add paths after FROM declaration
                 lines = []
