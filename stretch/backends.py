@@ -16,11 +16,14 @@ class Backend(object):
     def delete_host(self, host):
         raise NotImplementedError
 
-    @task()
-    def create_host_with_node(self, node):
-        host = self.create_host()
-        host.add_node(node)
-        return host
+    def add_to_lb(self, lb_id, host):
+        raise NotImplementedError
+
+    def remove_from_lb(self, lb_id, host):
+        raise NotImplementedError
+
+    def create_lb(self, port):
+        raise NotImplementedError
 
 
 class AutoloadingBackend(Backend):
@@ -46,7 +49,7 @@ class RackspaceBackend(Backend):
     def __init__(self, options):
         self.username = options.get('username')
         api_key = options.get('api_key')
-        self.region = options.get('region')
+        self.region = options.get('region').upper()
         self.domainname = options.get('domainname')
 
         if not settings.SALT_MASTER:
@@ -55,6 +58,7 @@ class RackspaceBackend(Backend):
         pyrax.set_setting('identity_type', 'rackspace')
         pyrax.set_credentials(self.username, api_key)
         self.cs = pyrax.connect_to_cloudservers(region=self.region)
+        self.clb = pyrax.connect_to_cloud_loadbalancers(region=self.region)
 
         self.image = [img for img in self.cs.images.list()
                       if 'Ubuntu 13.04' in img.name][0]
@@ -109,3 +113,53 @@ class RackspaceBackend(Backend):
             for server in self.cs.list():
                 if server.name == host.hostname:
                     server.delete()
+
+    def create_lb(self, lb_object, hosts):
+        if not hosts:
+            raise Exception('No hosts defined for load balancer')
+
+        vip = clb.VirtualIP(type='PUBLIC')
+        nodes = [self.get_node(host, lb_object) for host in hosts]
+
+        lb = self.clb.create(
+            str(utils.generate_random_hex(16)),
+            port=host_port.port,
+            protocol=host_port.protocol,
+            nodes=nodes,
+            virtual_ips=[vip],
+            algorithm='LEAST_CONNECTIONS'
+        )
+
+        pyrax.utils.wait_for_build(lb)
+
+        if lb.status != 'ACTIVE':
+            raise Exception('Failed to create load balancer')
+
+        lb.update(algorithm='LEAST_CONNECTIONS')
+        return str(lb.id), lb.sourceAddresses['ipv4Public']
+
+    def delete_lb(self, lb_object):
+        lb = clb.get(int(lb_object.backend_id))
+        lb.delete()
+
+    def add_to_lb(self, lb_object, host):
+        lb = clb.get(int(lb_object.backend_id))
+        node = self.get_node(host, lb_object)
+        lb.add_nodes([node])
+        pyrax.utils.wait_for_build(lb)
+
+    def remove_from_lb(self, lb_object, host):
+        lb = clb.get(int(lb_object.backend_id))
+        try:
+            node = [n for n in lb.nodes if n.address == host.address][0]
+        except KeyError:
+            raise Exception('Failed to get node from load balancer')
+        node.delete()
+        pyrax.utils.wait_for_build(lb)
+
+    def get_node(self, host, lb_object):
+        return self.clb.Node(
+            address=host.address,
+            port=lb_object.host_port,
+            condition='ENABLED'
+        )

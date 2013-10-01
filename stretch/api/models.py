@@ -9,12 +9,12 @@ from django_enumfield import enum
 from django.contrib.contenttypes.models import ContentType
 from django.contrib.contenttypes import generic
 from django.conf import settings
-from celery import current_task
+from celery import current_task, group
 from celery.contrib.methods import task
 from distutils import dir_util
 
 import stretch
-from stretch import plugins, utils, parser
+from stretch import plugins, utils, parser, tasks
 from stretch.utils import salt_client
 from stretch.sources import Source
 
@@ -121,6 +121,7 @@ class Host(ChildModel):
     managed = models.BooleanField()
     groups = generic.GenericRelation(Group)
     instances = generic.GenericRelation(NodeInstance)
+    address = models.GenericIPAddressField()
 
     def add_node(self, node):
         node_instance = NodeInstance(node=node, parent=self)
@@ -444,8 +445,34 @@ class NodeInstance(ChildModel):
         pass
 
 
+class PortBinding(model.Model):
+    instance = models.ForeignKey(NodeInstance)
+    source = models.IntegerField()
+    destination = models.IntegerField()
+
+
 class LoadBalancer(models.Model):
     port = models.IntegerField()
+    host_port = models.IntegerField()
+    protocol = models.TextField()
+    ip = models.GenericIPAddressField()
+    backend_id = models.CharField(max_length=32, unique=True)
+
+    @classmethod
+    def create(cls, port, host_port, protocol, hosts):
+        lb = cls(port=port, host_port=host_port, protocol=protocol)
+        lb.backend_id, lb.ip = stretch.backend.create_lb(self, hosts)
+        return lb
+
+    def add_host(self, host):
+        stretch.backend.add_to_lb(self.backend_id, host)
+
+    def remove_host(self, host):
+        stretch.backend.remove_from_lb(self.backend_id, host)
+
+    def delete(self):
+        stretch.backend.delete_lb(self.backend_id)
+        super(LoadBalancer, self).delete()
 
 
 class Group(ChildModel):
@@ -461,14 +488,10 @@ class Group(ChildModel):
     unique_together = ('name', 'environment')
 
     def scale_up(self, amount):
+        # THIS IS GROUPS OF HOSTS, whata bout groups of nodes? :3
         self.check_valid_amount(self.host_count + amount)
+        group(tasks.create_host.s(self) for _ in xrange(amount))().get()
 
-        for _ in range(amount):
-            host = backend.create_host_with_node.delay(self.node)
-            host.parent = self
-            host.save()
-
-        # Change group load balancer
         # trigger: reset env-wide configuration
 
     def scale_down(self, amount):
@@ -476,13 +499,18 @@ class Group(ChildModel):
 
         hosts = self.hosts[0:amount]
 
-        # remove hosts from self
         for host in hosts:
             host.parent = None
+            host.save()
+
         # trigger: reset env-wide configuration
-        self.environment # reset configuration generating hostlists 
-        # from the groups
-        [host.delete.delay() for host in hosts]
+
+        group(tasks.remove_host.s(host, self) for host in hosts)().get()
+
+    def add_load_balancer(self, port, host_port, protocol):
+        if not self.load_balancer and self.hosts:
+            self.load_balancer = LoadBalancer.create(port, host_port, protocol,
+                                                     self.hosts)
 
     def scale_to(self, amount):
         relative_amount = amount - self.host_count
