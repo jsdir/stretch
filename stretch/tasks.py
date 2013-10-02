@@ -1,13 +1,16 @@
+#from __future__ import absolute_import
 from celery import task
 
-from stretch import models
+#import stretch
 import stretch
+print dir(stretch)
+from stretch.models import System, Release
 
 
 @task
 def create_release_from_sources(system_name, source_options):
-    system = models.System.objects.get(name=system_name)
-    release = models.Release(system, source_options)
+    system = System.objects.get(name=system_name)
+    release = Release(system, source_options)
 
 
 @task

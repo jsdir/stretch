@@ -4,9 +4,6 @@ import sys
 
 if __name__ == "__main__":
     os.environ.setdefault("DJANGO_SETTINGS_MODULE", "stretch.settings")
-
-    import stretch.startup as startup
-    startup.run()
     
     from django.core.management import execute_from_command_line
 

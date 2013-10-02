@@ -1,4 +1,5 @@
 import os
+import sys
 # Django settings for stretch project.
 
 DEBUG = True
@@ -143,10 +144,12 @@ INSTALLED_APPS = (
     'allauth',
     'allauth.account',
     'djcelery',
-
+    'django_nose',
     #'api',
     #'tasks',
 )
+
+TEST_RUNNER = 'django_nose.NoseTestSuiteRunner'
 
 # A sample logging configuration. The only tangible logging
 # performed by this configuration is to send an email to
@@ -225,3 +228,6 @@ try:
     from .local_settings import *
 except ImportError:
     pass
+
+if 'test' in sys.argv or 'test_coverage' in sys.argv:
+    DATABASES['default'] = {'ENGINE': 'django.db.backends.sqlite3'}
