@@ -22,10 +22,10 @@ class Source(object):
         self.options = options
 
     def pull(self, options=None):
-        raise NotImplementedError
+        raise NotImplementedError  # pragma: no cover
 
     def get_path(self):
-        raise NotImplementedError
+        raise NotImplementedError  # pragma: no cover
 
     def parse(self):
         self.existing_parser = self.parser
@@ -37,22 +37,25 @@ class AutoloadableSource(Source):
     """
     A source that pushes to a compatible backend on a trigger
     """
-    def __init__(self):
-        super(AutoloadableSource, self).__init__()
-        self.autoload = self.options.get('autoload') or True
+    def __init__(self, options):
+        super(AutoloadableSource, self).__init__(options)
+        self.autoload = self.options.get('autoload', True)
 
     def monitor(self):
-        if self.autoload:
-            self.do_monitor()
+        if not self.autoload:
+            raise Exception('Cannot monitor a source that does not autoload')
+        self.do_monitor()
 
     def do_monitor(self):
-        raise NotImplementedError
+        raise NotImplementedError  # pragma: no cover
 
 
 class GitRepositorySource(Source):
-    def __init__(self):
-        super(GitRepositorySource, self).__init__()
+    def __init__(self, options):
+        super(GitRepositorySource, self).__init__(options)
         self.url = self.options.get('url')
+        if not self.url:
+            raise NameError('No url defined')
         self.path = None
 
     def get_path(self):
@@ -60,7 +63,7 @@ class GitRepositorySource(Source):
             self.pull()
         return self.path
 
-    def pull(self, options=None):
+    def pull(self, options=None):  # pragma: no cover
         ref = None
         if isinstance(options, dict):
             ref = options.get('ref')
@@ -96,13 +99,14 @@ class EventHandler(FileSystemEventHandler):
         super(FileSystemEventHandler, self).__init__()
         self.source = source
         self.queue = []
+        self.timeout = 0.2
         self.timer = None
 
     def on_any_event(self, event):
         self.queue.append(event)
         if self.timer:
             self.timer.cancel()
-        self.timer = threading.Timer(0.2, self.push_queue)
+        self.timer = threading.Timer(self.timeout, self.push_queue)
         self.timer.start()
 
     def push_queue(self):
@@ -111,15 +115,17 @@ class EventHandler(FileSystemEventHandler):
 
 
 class FileSystemSource(AutoloadableSource):
-    def __init__(self):
-        super(FileSystemSource, self).__init__()
+    def __init__(self, options):
+        super(FileSystemSource, self).__init__(options)
         self.path = self.options.get('path')
+        if not self.path:
+            raise NameError('No path defined')
         self.parse()
 
     def get_path(self):
         return self.path
 
-    def do_monitor(self):
+    def do_monitor(self):  # pragma: no cover
         log.info('Monitoring %s' % self.path)
         event_handler = EventHandler(self)
         observer = Observer()
