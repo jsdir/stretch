@@ -102,23 +102,29 @@ class AutoloadableSource(Source):
     A source that triggers a callback when its files are changed.
     """
 
-    def __init__(self, options, callback):
+    def __init__(self, options):
         """
         :Parameters:
           - `options`: dictionary containing source options. The
             `autoload` options determines if the source should autoload
             on file changes.
-          - `callback`: callback to trigger when files are changed
         """
         super(AutoloadableSource, self).__init__(options)
         self.autoload = self.options.get('autoload', True)
-        self.on_change_callback = callback
+        self.on_change_callback = None
+
+    def watch(self):
+        if self.autoload:
+            self.do_watch()
+
+    def do_watch(self):
+        raise NotImplementedError
 
 
 class EventHandler(FileSystemEventHandler):
-    def __init__(self, source):
+    def __init__(self, callback):
         super(FileSystemEventHandler, self).__init__()
-        self.source = source
+        self.callback = callback
         self.queue = []
         self.timeout = 0.2
         self.timer = None
@@ -131,29 +137,26 @@ class EventHandler(FileSystemEventHandler):
         self.timer.start()
 
     def push_queue(self):
-        self.source.on_files_change(self.queue)
+        self.callback(self.queue)
         self.queue = []
 
 
 class FileSystemSource(AutoloadableSource):
-    def __init__(self, options, callback):
-        super(FileSystemSource, self).__init__(options, callback)
+    def __init__(self, options):
+        super(FileSystemSource, self).__init__(options)
         self.path = self.require_option('path')
 
-        if self.autoload:
-            self.watch()
-
-    def watch(self):
-        super(FileSystemSource, self).watch()
-
+    def do_watch(self):
         log.info('Monitoring %s' % self.path)
         observer = Observer()
-        observer.schedule(EventHandler(self), self.path, recursive=True)
+        observer.schedule(EventHandler(self.on_change), self.path,
+                          recursive=True)
         observer.start()
 
-    def on_files_change(self, events):
+    def on_change(self, events):
         # Aggregate changed files
         changed_files = []
+
         for event in events:
             path = event.src_path
 
@@ -162,8 +165,36 @@ class FileSystemSource(AutoloadableSource):
 
             if path not in changed_files:
                 changed_files.append(path)
-                
-        self.on_change_callback(changed_files)
+
+        signals.source_changed.send(sender=self, changed_files=changed_files)
 
     def pull(self, options={}):
         return self.path
+
+
+def get_sources(system):
+    return source_map.get(system.name, [])
+
+
+def get_system(source):
+    for system_name, sources in source_map.iteritems():
+        if source in sources:
+            return system_name
+    return None
+
+
+def watch():
+    for system_name, sources in source_map.iteritems():
+        for source in sources:
+            if isinstance(source, AutoloadableSource):
+                source.watch()
+
+
+source_map = {}
+
+for system_name, sources in settings.STRETCH_SOURCES.iteritems():
+    source_map[system_name] = []
+
+    for class_name, options in sources.iteritems():
+        source_class = utils.get_class(class_name)
+        source_map[system_name].append(source_class(options))
