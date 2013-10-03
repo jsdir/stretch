@@ -6,10 +6,12 @@ from celery.contrib.methods import task
 from stretch import signals, sources, utils
 
 log = logging.getLogger('stretch')
+alphanumeric = RegexValidator(r'^[a-zA-Z0-9_\-]*$',
+    'Only alphanumeric characters, underscores, and hyphens are allowed.')
 
 
 class System(models.Model):
-    name = models.TextField(unique=True)
+    name = models.TextField(unique=True, validators=[alphanumeric])
 
     def create_release(self, options):
         release = Release.create(self.source.pull(options), system=self)
@@ -29,7 +31,7 @@ class System(models.Model):
 
 
 class Environment(models.Model):
-    name = models.TextField()
+    name = models.TextField(validators=[alphanumeric])
     auto_deploy = models.BooleanField(default=False)
     system = models.ForeignKey('System', related_name='environments')
 
@@ -70,7 +72,7 @@ class Release(models.Model):
                 env.deploy.delay(self)
 
     def build_from(self, path):
-
+        pass
 
 
 @receiver(signals.source_changed)
