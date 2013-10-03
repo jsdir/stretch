@@ -2,7 +2,7 @@ from mock import Mock, patch, call
 from nose.tools import eq_, raises
 import time
 
-from stretch import sources
+from stretch import sources, signals
 
 
 class TestFileSystemSource(object):
@@ -31,6 +31,13 @@ class TestFileSystemSource(object):
     @raises(NameError)
     def test_fails_without_path(self):
         source = sources.FileSystemSource({})
+
+    """
+    @patch('stretch.sources.FileSystemSource.parse')
+    def test_sends_source_changed_signal(self):
+        source = sources.FileSystemSource({'path': 'foo'})
+        source.on_files_change(['foo', 'bar'])
+    """
 
 
 class TestGitRepositorySource(object):

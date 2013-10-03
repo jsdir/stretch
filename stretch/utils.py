@@ -7,9 +7,9 @@ import shutil
 import random
 import jinja2
 import collections
-import salt.client
-import salt.config
-import salt.wheel
+#import salt.client
+#import salt.config
+#import salt.wheel
 
 from django.conf import settings
 
@@ -76,7 +76,7 @@ def clear_path(path):
     makedirs(path)
 
 
-def generate_memorable_name():
+def generate_memorable_name():  # pragma: no cover
     """
     Return a randomly-generated memorable name.
     """
@@ -122,6 +122,6 @@ def generate_memorable_name():
                          generate_random_hex(4))
 
 
-salt_master_config = salt.config.master_config(settings.SALT_CONF_PATH)
-wheel_client = salt.wheel.Wheel(salt_master_config)
-salt_client = salt.client.LocalClient()
+salt_master_config = None#salt.config.master_config(settings.SALT_CONF_PATH)
+wheel_client = None#salt.wheel.Wheel(salt_master_config)
+salt_client = None#salt.client.LocalClient()

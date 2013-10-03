@@ -2,7 +2,7 @@
 import sys
 import os
 
-from stretch import tasks
+from stretch import models
 
 # Calling script: post-receive
 #
@@ -12,4 +12,4 @@ from stretch import tasks
 
 if __name__ == '__main__':
     os.environ['DJANGO_SETTINGS_MODULE'] = 'stretch.settings'
-    tasks.create_release_from_sources.delay(sys.argv[2], {'ref': sys.argv[1]})
+    models.Release.create_from_sources.delay(sys.argv[2], {'ref': sys.argv[1]})

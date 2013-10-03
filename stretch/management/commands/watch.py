@@ -1,15 +1,16 @@
 #!/usr/bin/env python
 from django.core.management.base import BaseCommand
+import time
 
-from stretch import loader
-from stretch.sources import AutoloadableSource
+from stretch import sources
 
 
 class Command(BaseCommand):
-    help = 'Monitors autoloading sources'
+    help = 'Watches autoloadable sources for file changes'
 
     def handle(self, *args, **options):
-        source, backend = loader.source, loader.backend
+        sources.watch()
 
-        if isinstance(source, AutoloadableSource):
-            source.monitor()
+        # Keep running event loop
+        while True:
+            time.sleep(5)
