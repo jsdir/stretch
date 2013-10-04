@@ -104,18 +104,19 @@ class Container(object):
                 self.tag = 'stretch_base/%s' % utils.generate_random_hex(16)
             elif release:
                 # Node container
-                self.tag = '%s/%s#%s' % (settings.REGISTRY_URL, node.pk,
+                self.tag = '%s/%s#%s' % (settings.REGISTRY_URL, node.name,
                     release.sha)
             else:
                 # Local container
-                self.tag = 'stretch/%s' % node.pk
+                self.tag = 'stretch/%s' % node.name
 
             # Build image
+            log.info('Building %s' % self.tag)
             docker_client.build(self.path, self.tag, fileobj=dockerfile)
 
             # Push node containers to registry
             if not self.parent:
-                docker_client.push(self.tag)
+                pass #docker_client.push(self.tag)
 
             # TODO: clean up base images
             self.built = True
@@ -289,7 +290,7 @@ class Snapshot(object):
         for node in self.nodes:
             config_file = node.build_files.get('config')
             if config_file:
-                config['nodes'][str(node.pk)] = read_file(config_file)
+                config['nodes'][node.name] = read_file(config_file)
 
         return config
 

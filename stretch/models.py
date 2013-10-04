@@ -1,7 +1,12 @@
+import os
 import logging
+import tarfile
+import json
+from distutils import dir_util
 from django.db import models
 from django.dispatch import receiver
 from django.core.validators import RegexValidator
+from django.conf import settings
 from celery.contrib.methods import task
 
 from stretch import signals, sources, utils
@@ -61,10 +66,14 @@ class Environment(models.Model):
             pass
         elif isinstance(obj, Release):
             pass
+        # need: snapshot in sandbox and release configuration
 
     @task
-    def autoload(self, source):
+    def autoload(self, source, nodes):
         log.info('Autoloading %s' % source)
+        source.run_build_plugins(self, nodes)
+        source.run_pre_deploy_plugins(self, nodes)
+        source.run_post_deploy_plugins(self, nodes)
 
 
 class Release(AuditedModel):
@@ -74,24 +83,35 @@ class Release(AuditedModel):
     unique_together = ('name', 'system')
 
     @classmethod
-    def create(cls, path, system):
+    def create(cls, snapshot, system):
         release = cls(
             name=utils.generate_memorable_name(),
             sha=utils.generate_random_hex(40),
             system=system
         )
 
-        release.build_from(path)
+        # Build release from snapshot
+        # Archive the release
+        release_dir = os.path.join(settings.DATA_DIR, 'releases', release.sha)
+        utils.clear_path(release_dir)
+
+        # Tar release buffer
+        tar_path = os.path.join(release_dir, '%s.tar.gz' % release.sha)
+        tar_file = tarfile.open(tar_path, 'w:gz')
+        tar_file.add(snapshot.path, '/')
+        tar_file.close()
+
+        # Write release configuration
+        with open(os.path.join(release_dir, '%s.json' % release.sha), 'w') as f:
+            f.write(json.dumps(snapshot.get_release_config()))
+
+        # Build docker images
+        snapshot.build_and_push(release)
+
+        # Build finished
         release.save()
-
-        for env in release.system.environments.all():
-            if env.auto_deploy:
-                env.deploy.delay(self)
-
+        signals.release_created.send(sender=release)
         return release
-
-    def build_from(self, path):
-        pass
 
 
 @receiver(signals.sync_source)
@@ -102,7 +122,8 @@ def on_sync_source(sender, snapshot, nodes, **kwargs):
     system_name = sources.get_system(source)
     if system_name:
         system = System.objects.get(name=system_name)
-        [env.autoload.delay(source) for env in system.environments.all()]
+        for env in system.environments.all():
+            env.autoload.delay(source, nodes)
 
 
 @receiver(signals.load_sources)
@@ -110,3 +131,11 @@ def on_load_sources(sender, **kwargs):
     log.info('Deploying autoloadable sources...')
     for system in System.objects.all():
         system.load_sources()
+
+
+@receiver(signals.release_created)
+def on_release_created(sender, **kwargs):
+    release = sender
+    for env in release.system.environments.all():
+        if env.auto_deploy:
+            env.deploy.delay(self)
