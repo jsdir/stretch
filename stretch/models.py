@@ -1,6 +1,7 @@
 import logging
 from django.db import models
 from django.dispatch import receiver
+from django.core.validators import RegexValidator
 from celery.contrib.methods import task
 
 from stretch import signals, sources, utils
@@ -10,13 +11,25 @@ alphanumeric = RegexValidator(r'^[a-zA-Z0-9_\-]*$',
     'Only alphanumeric characters, underscores, and hyphens are allowed.')
 
 
+class AuditedModel(models.Model):
+    created_at = models.DateTimeField(auto_now_add = True)
+    updated_at = models.DateTimeField(auto_now = True)
+
+    class Meta:
+        abstract = True
+
+
 class System(models.Model):
     name = models.TextField(unique=True, validators=[alphanumeric])
 
     def create_release(self, options):
-        release = Release.create(self.source.pull(options), system=self)
-        release.save()
-        return release
+        return Release.create(self.source.pull(options), system=self)
+
+    def load_sources(self):
+        if (isinstance(self.source, sources.AutoloadableSource) and
+                self.source.autoload):
+            for env in self.environments.all():
+                env.deploy.delay(self.source)
 
     @property
     def source(self):
@@ -49,8 +62,12 @@ class Environment(models.Model):
         elif isinstance(obj, Release):
             pass
 
+    @task
+    def autoload(self, source):
+        log.info('Autoloading %s' % source)
 
-class Release(models.Model):
+
+class Release(AuditedModel):
     name = models.TextField()
     sha = models.CharField('SHA', max_length=40)
     system = models.ForeignKey('System', related_name='releases')
@@ -71,16 +88,25 @@ class Release(models.Model):
             if env.auto_deploy:
                 env.deploy.delay(self)
 
+        return release
+
     def build_from(self, path):
         pass
 
 
-@receiver(signals.source_changed)
-def on_source_changed(sender, changed_files, **kwargs):
+@receiver(signals.sync_source)
+def on_sync_source(sender, snapshot, nodes, **kwargs):
     source = sender
     log.info('Source %s changed' % source)
-    log.info('Changed files: %s' % changed_files)
+    log.info('Changed nodes: %s' % nodes)
     system_name = sources.get_system(source)
     if system_name:
         system = System.objects.get(name=system_name)
-        [env.deploy.delay(source) for env in system.environments.all()]
+        [env.autoload.delay(source) for env in system.environments.all()]
+
+
+@receiver(signals.load_sources)
+def on_load_sources(sender, **kwargs):
+    log.info('Deploying autoloadable sources...')
+    for system in System.objects.all():
+        system.load_sources()

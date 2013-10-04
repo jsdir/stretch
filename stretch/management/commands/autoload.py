@@ -2,13 +2,14 @@
 from django.core.management.base import BaseCommand
 import time
 
-from stretch import sources
+from stretch import sources, signals
 
 
 class Command(BaseCommand):
-    help = 'Watches autoloadable sources for file changes'
+    help = 'Syncs autoloadable sources to their environments'
 
     def handle(self, *args, **options):
+        signals.load_sources.send(sender=self)
         sources.watch()
 
         # Keep running event loop

@@ -3,8 +3,7 @@ from stretch import models
 
 
 @task()
-def create_release_from_sources(system_name, source_options):
-    from stretch import models
+def create_release(system_name, source_options):
     system = models.System.objects.get(name=system_name)
     release = system.create_release(source_options)
 

@@ -76,6 +76,10 @@ def clear_path(path):
     makedirs(path)
 
 
+def path_contains(path, file_path):
+    return not os.path.relpath(file_path, path).startswith('..')
+
+
 def generate_memorable_name():  # pragma: no cover
     """
     Return a randomly-generated memorable name.

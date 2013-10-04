@@ -122,11 +122,11 @@ class Container(object):
 
 
 class Node(object):
-    def __init__(self, path, relative_path, parser, name=None):
+    def __init__(self, path, relative_path, snapshot, name=None):
         self.path = os.path.realpath(path)
         self.relative_path = relative_path
         self.name = name
-        self.parser = parser
+        self.snapshot = snapshot
 
         # Begin parsing node
         self.parse()
@@ -146,19 +146,20 @@ class Node(object):
 
         # Find containers
         container = self.stretch_data.get('container')
-        if container_path:
+        if container:
             path = os.path.join(self.path, container)
         else:
             path = self.path
-        self.container = Container.create(path, self.parser.containers)
+        self.container = Container.create(path, self.snapshot.containers,
+                                          ancestor_paths=[])
 
         # Find app path
-        app_path = os.path.join(self.container.path, 'app')
-        if not os.path.exists(app_path):
-            app_path = None
+        self.app_path = os.path.join(self.container.path, 'app')
+        if not os.path.exists(self.app_path):
+            self.app_path = None
 
 
-class SourceParser(object):
+class Snapshot(object):
     def __init__(self, path, release=None):
         self.path = path
         self.relative_path = '/'
@@ -244,17 +245,17 @@ class SourceParser(object):
             if nodes != None or plugin.parent in nodes:
                 plugin.build(environment)
 
-    def run_pre_deploy_plugins(self, environment, existing_parser,
+    def run_pre_deploy_plugins(self, environment, existing_snapshot,
                                nodes=None):
         for plugin in self.plugins:
             if nodes != None or plugin.parent in nodes:
-                plugin.pre_deploy(environment, self, existing_parser)
+                plugin.pre_deploy(environment, self, existing_snapshot)
 
-    def run_post_deploy_plugins(self, environment, existing_parser,
+    def run_post_deploy_plugins(self, environment, existing_snapshot,
                                 nodes=None):
         for plugin in self.plugins:
             if nodes != None or plugin.parent in nodes:
-                plugin.post_deploy(environment, self, existing_parser)
+                plugin.post_deploy(environment, self, existing_snapshot)
 
     def copy_to_buffer(self, path):
         dir_util.copy_tree(self.path, path)
@@ -316,7 +317,7 @@ def read_file(path):
 
 
 def get_data(path):
-    return yaml.load(read_file(path))
+    return yaml.load(read_file(path)) or {}
 
 
 def get_build_files(path):

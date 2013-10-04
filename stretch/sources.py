@@ -7,7 +7,7 @@ from watchdog.events import FileSystemEventHandler
 from watchdog.observers import Observer
 from django.conf import settings
 
-from stretch import signals, utils
+from stretch import signals, utils, parser
 
 log = logging.getLogger('stretch')
 
@@ -31,7 +31,7 @@ class Source(object):
         Pull the latest version of the code according to the given
         `options`.
 
-        Returns the path containing the newly-pulled code.
+        Returns a SourceParser with the newly-pulled code.
 
         :Parameters:
           - `options`: optional dictionary that specifies what to pull.
@@ -91,10 +91,12 @@ class GitRepositorySource(Source):
             else:
                 log.info('No commit specified.')
                 log.info('Using commit: %s' % repo.head.commit.hexsha)
+
+            self._snapshot = parser.Snapshot(self.path)
         else:
             log.info('Ref %s already checked out.' % self.ref)
 
-        return self.path
+        return self._snapshot
 
 
 class AutoloadableSource(Source):
@@ -154,22 +156,28 @@ class FileSystemSource(AutoloadableSource):
         observer.start()
 
     def on_change(self, events):
-        # Aggregate changed files
-        changed_files = []
+        # Autoload node only if an event took place within the node's
+        # monitored path
+        snapshot = self.pull()
+        autoload_nodes = []
 
-        for event in events:
-            path = event.src_path
+        for node, paths in snapshot.monitored_paths.iteritems():
+            for event in events:
+                path = event.src_path
 
-            if hasattr(event, 'dest_path'):
-                path = event.dest_path
+                if hasattr(event, 'dest_path'):
+                    path = event.dest_path
 
-            if path not in changed_files:
-                changed_files.append(path)
+                if any([utils.path_contains(mpath, path) for mpath in paths]):
+                    autoload_nodes.append(node)
+                    break
 
-        signals.source_changed.send(sender=self, changed_files=changed_files)
+        if autoload_nodes:
+            signals.sync_source.send(sender=self, snapshot=snapshot,
+                                     nodes=autoload_nodes)
 
     def pull(self, options={}):
-        return self.path
+        return parser.Snapshot(self.path)
 
 
 def get_sources(system):

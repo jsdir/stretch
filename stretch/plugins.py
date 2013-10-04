@@ -96,8 +96,8 @@ class MigrationsPlugin(Plugin):
     """
     name = 'migrations'
 
-    def __init__(self):
-        super(MigrationsPlugin, self).__init__()
+    def __init__(self, options, parent):
+        super(MigrationsPlugin, self).__init__(options, parent)
         self.is_setup = False
 
     def setup(self):
@@ -203,8 +203,8 @@ class GruntPlugin(Plugin):
     """
     name = 'grunt'
 
-    def __init__(self):
-        super(GruntPlugin, self).__init__()
+    def __init__(self, options, parent):
+        super(GruntPlugin, self).__init__(options, parent)
         self.is_setup = False
 
     def setup(self):
