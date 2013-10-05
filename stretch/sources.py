@@ -31,7 +31,7 @@ class Source(object):
         Pull the latest version of the code according to the given
         `options`.
 
-        Returns a SourceParser with the newly-pulled code.
+        Returns a path to the newly-pulled code.
 
         :Parameters:
           - `options`: optional dictionary that specifies what to pull.
@@ -92,11 +92,10 @@ class GitRepositorySource(Source):
                 log.info('No commit specified.')
                 log.info('Using commit: %s' % repo.head.commit.hexsha)
 
-            self._snapshot = parser.Snapshot(self.path)
         else:
             log.info('Ref %s already checked out.' % self.ref)
 
-        return self._snapshot
+        return self.path
 
 
 class AutoloadableSource(Source):
@@ -158,7 +157,7 @@ class FileSystemSource(AutoloadableSource):
     def on_change(self, events):
         # Autoload node only if an event took place within the node's
         # monitored path
-        snapshot = self.pull()
+        snapshot = parser.Snapshot(self.pull())
         autoload_nodes = []
 
         for node, paths in snapshot.monitored_paths.iteritems():
@@ -177,7 +176,7 @@ class FileSystemSource(AutoloadableSource):
                                      nodes=autoload_nodes)
 
     def pull(self, options={}):
-        return parser.Snapshot(self.path)
+        return self.path
 
 
 def get_sources(system):

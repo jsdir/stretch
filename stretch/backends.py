@@ -163,3 +163,17 @@ class RackspaceBackend(Backend):
             port=lb_object.host_port,
             condition='ENABLED'
         )
+
+
+def get_backend(env):
+    return backend_map.get(env.name)
+
+
+backend_map = {}
+
+for env_name, backends in settings.STRETCH_BACKENDS.iteritems():
+    for class_name, options in backends.iteritems():
+        # Only one backend per environment
+        backend_class = utils.get_class(class_name)
+        backend_map[env_name] = source_class(options)
+        break

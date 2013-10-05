@@ -7,6 +7,9 @@ import shutil
 import random
 import jinja2
 import collections
+import tempfile
+from distutils import dir_util
+
 #import salt.client
 #import salt.config
 #import salt.wheel
@@ -70,10 +73,21 @@ def render_template(data, contexts=[]):
     return jinja2.Template(data).render(context)
 
 
-def clear_path(path):
+def delete_path(path):
     if os.path.exists(path):
         shutil.rmtree(path)
+
+
+def clear_path(path):
+    delete_path(path)
     makedirs(path)
+
+
+def tmp_dir(path=None):
+    tmp_path = tempfile.mkdtemp(prefix='%s/' % settings.STRETCH_TEMP_DIR)
+    if path:
+        dir_util.copy_tree(path, tmp_path)
+    return tmp_path
 
 
 def path_contains(path, file_path):

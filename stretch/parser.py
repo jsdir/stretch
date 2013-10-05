@@ -241,27 +241,25 @@ class Snapshot(object):
     def build_local(self):
         [node.container.build(None, node) for node in self.nodes]
 
-    def run_build_plugins(self, environment, nodes=None):
+    def run_build_plugins(self, deploy, nodes=None):
         for plugin in self.plugins:
             if nodes != None or plugin.parent in nodes:
-                plugin.build(environment)
+                plugin.build(deploy)
 
-    def run_pre_deploy_plugins(self, environment, existing_snapshot,
-                               nodes=None):
+    def run_pre_deploy_plugins(self, deploy, nodes=None):
         for plugin in self.plugins:
             if nodes != None or plugin.parent in nodes:
-                plugin.pre_deploy(environment, self, existing_snapshot)
+                plugin.pre_deploy(deploy)
 
-    def run_post_deploy_plugins(self, environment, existing_snapshot,
-                                nodes=None):
+    def run_post_deploy_plugins(self, deploy, nodes=None):
         for plugin in self.plugins:
             if nodes != None or plugin.parent in nodes:
-                plugin.post_deploy(environment, self, existing_snapshot)
+                plugin.post_deploy(deploy)
 
     def copy_to_buffer(self, path):
         dir_util.copy_tree(self.path, path)
 
-    def get_release_config(self):
+    def get_config(self):
         """
         Return configuration that can be easily reconstructed
 

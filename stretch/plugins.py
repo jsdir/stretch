@@ -50,13 +50,13 @@ class Plugin(object):
     def setup(self):
         raise NotImplementedError
 
-    def build(self, environment):
+    def build(self, deploy):
         log.debug('%s build hook triggered' % self)
 
-    def pre_deploy(self, environment, new_parser, existing_parser):
+    def pre_deploy(self, deploy):
         log.debug('%s pre_deploy hook triggered' % self)
 
-    def post_deploy(self, environment, new_parser, existing_parser):
+    def post_deploy(self, deploy):
         log.debug('%s post_deploy hook triggered' % self)
 
     def get_path(self):
@@ -106,65 +106,57 @@ class MigrationsPlugin(Plugin):
             self.env.install_package('db-migrate', '0.5.4', ['-g'])
             self.is_setup = True
 
-    def pre_deploy(self, environment, new_parser, existing_parser):
-        super(MigrationsPlugin, self).pre_deploy(environment, new_parser,
-                                                 existing_parser)
+    def pre_deploy(self, deploy):
+        super(MigrationsPlugin, self).pre_deploy(deploy)
         self.setup()
-        self.migrate(environment, new_parser, existing_parser, pre_deploy=True)
+        self.migrate(env, deploy, pre_deploy=True)
 
-    def post_deploy(self, environment, new_parser, existing_parser):
-        super(MigrationsPlugin, self).post_deploy(environment, new_parser,
-                                                  existing_parser)
+    def post_deploy(self, deploy):
+        super(MigrationsPlugin, self).post_deploy(deploy)
         self.setup()
-        self.migrate(environment, new_parser, existing_parser,
-                     pre_deploy=False)
+        self.migrate(deploy, pre_deploy=False)
 
-    def migrate(self, environment, new_parser, existing_parser, pre_deploy):
-        if new_parser.release:
+    def migrate(self, deploy, pre_deploy):
+        if deploy.is_from_release():
             # Standard deploy
             # Get releases
-            new_release = new_parser.release
-            existing_release = None
-            if existing_parser:
-                existing_release = existing_parser.release
+            release = deploy.release
+            existing_release = deploy.existing_release
 
             # Determine migration data to use
-            if (not existing_release or
-                    new_release.created_at > existing_release.created_at and
-                    pre_deploy):
+            if ((not existing_release) or (
+                    (release.created_at > existing_release.created_at) and
+                    pre_deploy)):
                 # Release deploy
                 # Migrate using the new release plugin
-                self.run_migration(environment, self, new_release,
-                                   existing_release)
+                self.run_migration(env, self, deploy)
             elif not pre_deploy:
                 # Rollback deploy
                 # Use the existing release
                 # Find corresponding plugin in existing release
                 existing_plugin = None
-                for plugin in existing_parser.plugins:
+                for plugin in deploy.existing_snapshot.plugins:
                     if (plugin.name == self.name and
                             plugin.relative_path == self.relative_path):
                         existing_plugin = plugin
 
                 if existing_plugin:
                     # Migrate using the existing release plugin
-                    self.run_migration(environment, existing_plugin,
-                                       new_release, existing_release)
+                    self.run_migration(env, existing_plugin, deploy)
                 else:
                     # Leave the database alone since the rollback
                     # has no data about it
                     log.info('Migration plugin not found in rollback release. '
                              'Skipping.')
         else:
-            # Source deploy
-            self.run_migration(environment, self, None, None)
+            # Source deploy, migrate to source
+            self.run_migration(env, self, deploy)
 
-    def run_migration(self, environment, plugin, new_release, existing_release):
+    def run_migration(self, plugin, deploy):
         path = plugin.get_path()
 
         # Use releases for template context
-        contexts = [contexts.create_deploy_context(
-            environment, new_release, existing_release)]
+        contexts = [contexts.create_deploy_context(deploy)]
 
         # Render database.json
         context = self.options.get('context')
@@ -189,11 +181,11 @@ class MigrationsPlugin(Plugin):
         # Clean up
         os.remove(rendered_file)
 
-    def get_later_migration(self, x, y):
-        if int(x.split('-')[0]) > int(y.split('-')[0]):
-            return x
+    def get_later_migration(self, m1, m2):
+        if int(m1.split('-')[0]) > int(m2.split('-')[0]):
+            return m1
         else:
-            return y
+            return m2
 
 
 class GruntPlugin(Plugin):
@@ -213,14 +205,14 @@ class GruntPlugin(Plugin):
             self.env.install_package('grunt-cli', '0.1.9', ['-g'])
             self.is_setup = True
 
-    def build(self, environment):
+    def build(self, deploy):
         super(GruntPlugin, self).build()
         self.setup()
 
         path = self.get_path()
 
         # Render Gruntfile
-        contexts = [contexts.create_deploy_context(environment)]
+        contexts = [contexts.create_deploy_context(deploy)]
         context = self.options.get('context')
         if context:
             contexts.append(context)

@@ -213,13 +213,12 @@ REST_FRAMEWORK = {
 from .celery_settings import *
 from .salt_settings import *
 
-# default settings
-SOURCE = {}
-BACKEND = {}
-CACHE_DIR = '/var/cache/stretch'
-LOCK_DIR = '/var/lock/stretch'
-TEMP_DIR = '/tmp/stretch'
-DATA_DIR = '/var/lib/stretch'
+# Default settings
+STRETCH_SOURCES = {}
+STRETCH_BACKENDS = {}
+STRETCH_LOCK_DIR = '/var/lock/stretch'
+STRETCH_TEMP_DIR = '/tmp/stretch'
+STRETCH_DATA_DIR = '/var/lib/stretch'
 DOMAIN_NAME = None
 SALT_CONF_PATH = '/etc/salt'
 BATCH_SIZE = 5
