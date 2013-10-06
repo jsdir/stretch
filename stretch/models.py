@@ -24,7 +24,7 @@ class AuditedModel(models.Model):
         abstract = True
 
 
-class System(models.Model):
+class System(AuditedModel):
     name = models.TextField(unique=True, validators=[alphanumeric])
 
     def create_release(self, options):
@@ -48,7 +48,7 @@ class System(models.Model):
         return self._source
 
 
-class Environment(models.Model):
+class Environment(AuditedModel):
     name = models.TextField(validators=[alphanumeric])
     auto_deploy = models.BooleanField(default=False)
     system = models.ForeignKey('System', related_name='environments')
@@ -262,6 +262,26 @@ class Release(AuditedModel):
 
     def get_data_dir(self):
         return os.path.join(settings.DATA_DIR, 'releases', self.sha)
+
+
+class Instance(AuditedModel):
+    node = models.ForeignKey('Node')
+
+    def reload(self):
+        pass
+
+    def restart(self):
+        pass
+
+    def load_config(self, config):
+        # TODO: Relate config with self.node.pk
+        pass
+
+    def deploy(self, sha=None):
+        if sha:
+            pass # TODO: Deploy with release sha
+        else:
+            pass # TODO: Deploy with local image with self.node.{pk, name}
 
 
 class Deploy(AuditedModel):
