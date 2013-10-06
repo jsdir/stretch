@@ -206,7 +206,7 @@ class Release(AuditedModel):
     name = models.TextField()
     sha = models.CharField('SHA', max_length=40)
     system = models.ForeignKey('System', related_name='releases')
-    unique_together = ('name', 'system')
+    unique_together = ('system', 'name', 'sha')
 
     @classmethod
     def create(cls, path, system):
@@ -264,8 +264,15 @@ class Release(AuditedModel):
         return os.path.join(settings.DATA_DIR, 'releases', self.sha)
 
 
+class Node(AuditedModel):
+    system = models.ForeignKey('System', related_name='nodes')
+    name = models.TextField()
+    unique_together = ('system', 'name')
+
+
 class Instance(AuditedModel):
-    node = models.ForeignKey('Node')
+    environment = models.ForeignKey('Environment', related_name='instances')
+    node = models.ForeignKey('Node', related_name='instances')
 
     def reload(self):
         pass
@@ -287,7 +294,7 @@ class Instance(AuditedModel):
 class Deploy(AuditedModel):
     release = models.ForeignKey('Release')
     existing_release = models.ForeignKey('Release')
-    environment = models.ForeignKey('Environment')
+    environment = models.ForeignKey('Environment', related_name='deploys')
     task_id = models.CharField(max_length=128)
 
     @classmethod
