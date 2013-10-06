@@ -10,13 +10,12 @@ class ServicesContext(object):
         return data
 
 
-def create_deploy_context(environment, new_release=None,
-                          existing_release=None):
+def create_deploy_context(deploy):
     return {
-        'services': ServicesContext(environment),
-        'environment': environment,
-        'release': new_release,
-        'existing_release': existing_release
+        'services': ServicesContext(deploy.environment),
+        'environment': deploy.environment,
+        'release': deploy.release,
+        'existing_release': deploy.existing_release
     }
 
 

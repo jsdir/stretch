@@ -53,6 +53,7 @@ class Environment(models.Model):
     auto_deploy = models.BooleanField(default=False)
     system = models.ForeignKey('System', related_name='environments')
     current_release = models.ForeignKey('Release')
+    using_source = models.BooleanField(default=False)
 
     @property
     def backend(self):
@@ -107,36 +108,98 @@ class Environment(models.Model):
         snapshot = deploy.snapshot
 
         update_status(2, 'Running build plugins')
-        deploy.snapshot.run_build_plugins(deploy)
+        snapshot.run_build_plugins(deploy)
 
         update_status(3, 'Running pre-deploy plugins')
-        deploy.snapshot.run_pre_deploy_plugins(deploy)
+        snapshot.run_pre_deploy_plugins(deploy)
 
-        update_status(4, 'Running post-deploy plugins')
+        # Deploy to backend
+        update_status(4, 'Deploying to backend...')
+
+        # Build images and save config if source deploy
+        if not is_release:
+            snapshot.build_and_push(None, self)
+            config_path = self.get_config_path()
+            utils.makedirs(os.path.split(config_path)[0])
+            snapshot.save_config(config_path)
+            # Start node piping
+
+        # TODO: Mount templates, use environment subdirectory to prevent clash
+        
+        def callback(instance):
+            # TODO: share registry url, batch_size
+            if is_release:
+                instance.deploy(obj.sha)
+            else:
+                instance.deploy()
+
+        self.map_instances(callback)
+
+        # TODO: Unmount templates
+
+        update_status(5, 'Running post-deploy plugins')
         deploy.snapshot.run_post_deploy_plugins(deploy)
 
         # Delete temporary directories
-        update_status(5, 'Cleaning up')
+        update_status(6, 'Cleaning up')
 
         utils.delete_path(snapshot.path)
         if deploy.existing_snapshot:
             utils.delete_path(deploy.existing_snapshot.path)
 
         # Update current release
-        update_status(6, 'Setting new release')
+        update_status(7, 'Setting new release')
+
+        self.using_source = not is_release
 
         if is_release:
             self.current_release = obj
         else:
             self.current_release = None
+
         self.save()
 
     @task
     def autoload(self, source, nodes):
         log.info('Autoloading %s' % source)
-        source.run_build_plugins(self, nodes)
-        source.run_pre_deploy_plugins(self, nodes)
-        source.run_post_deploy_plugins(self, nodes)
+
+        # Use stub deploy
+        deploy = Deploy.create(environment=self)
+
+        source.run_build_plugins(deploy, nodes)
+        node_names = [node.name for node in nodes]
+        for instance in self.instances:
+            if instance.node.name in node_names:
+                instance.reload()
+
+    def get_config_path(self):
+        return os.path.join(settings.STRETCH_DATA_DIR, 'environments',
+                            str(self.pk), 'config.json')
+
+    def update_config(self):
+        config_data = None
+        if self.current_release:
+            config_data = self.current_release.get_config()
+        elif self.using_source:
+            config_data = json.load(open(self.get_config_path()))
+
+        if config_data:
+            # Use stub deploy
+            deploy = Deploy.create(environment=self)
+            rendered_config = parser.render_config(config_data, deploy)
+
+            def callback(instance):
+                config = rendered_config.get(instance.node.name)
+                if config:
+                    instance.load_config(config)
+                instance.restart()
+
+            self.map_instances(callback)
+
+    def map_instances(self, callback):
+        # TODO: filter to batch size
+        for instance in self.instances:
+            callback(instance)
 
 
 class Release(AuditedModel):
@@ -170,9 +233,8 @@ class Release(AuditedModel):
         tar_file.add(tmp_path, '/')
         tar_file.close()
 
-        # Write release configuration
-        with open(os.path.join(release_dir, 'config.json'), 'w') as f:
-            f.write(json.dumps(snapshot.get_release_config()))
+        # Dump release configuration
+        snapshot.save_config(os.path.join(release_dir, 'config.json'))
 
         # Build docker images
         snapshot.build_and_push(release)

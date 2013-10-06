@@ -56,7 +56,7 @@ class Container(object):
 
         return cls(path, containers, parent, ancestor_paths)
 
-    def build(self, release, node):
+    def build(self, release, env, node):
         if not self.built:
             # Recursively build and push base containers
             if self.base_container:
@@ -101,14 +101,14 @@ class Container(object):
             # Generate tag
             if self.parent:
                 # Base container
-                self.tag = 'stretch_base/%s' % utils.generate_random_hex(16)
+                self.tag = 'stretch/base/%s' % utils.generate_random_hex(16)
             elif release:
                 # Node container
                 self.tag = '%s/%s#%s' % (settings.REGISTRY_URL, node.name,
                     release.sha)
             else:
                 # Local container
-                self.tag = 'stretch/%s' % node.name
+                self.tag = 'stretch/%s/%s' % (env.pk, node.name)
 
             # Build image
             log.info('Building %s' % self.tag)
@@ -235,8 +235,8 @@ class Snapshot(object):
 
         return monitored_paths
 
-    def build_and_push(self, release):
-        [node.container.build(release, node) for node in self.nodes]
+    def build_and_push(self, release, env=None):
+        [node.container.build(release, env, node) for node in self.nodes]
 
     def build_local(self):
         [node.container.build(None, node) for node in self.nodes]
@@ -292,6 +292,9 @@ class Snapshot(object):
 
         return config
 
+    def save_config(self, path):
+        json.dump(self.get_config(), open(path, 'w'))
+
     def mount_templates(self, path):
         """
         path/
@@ -308,6 +311,10 @@ class Snapshot(object):
             templates_path = os.path.join(node.container.path, 'templates')
             if os.path.exists(templates_path):
                 dir_util.copy_tree(templates_path, dest_path)
+
+    def save_config(self, file_path):
+        with open(file_path, 'w') as f:
+            f.write(json.dumps(self.get_config()))
 
 
 def read_file(path):
