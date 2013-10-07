@@ -344,11 +344,10 @@ def get_build_files(path):
 
     return build_files
 
-def parse_release_config(config, environment, new_release, existing_release):
+def render_config(config, deploy):
 
     def get_config(data):
-        contexts = [contexts.create_deploy_context(environment, new_release,
-                                                   existing_release)]
+        contexts = [contexts.create_deploy_context(deploy)]
         config = utils.render_template(data, contexts)
         return yaml.load(config)
 
@@ -359,7 +358,7 @@ def parse_release_config(config, environment, new_release, existing_release):
 
     if global_data:
         # Apply global configuration
-        for block in get_config(global_data).iteritems():
+        for _, block in get_config(global_data).iteritems():
             block_config = block.get('config', {})
             block_nodes = block.get('nodes', [])
 
@@ -374,7 +373,7 @@ def parse_release_config(config, environment, new_release, existing_release):
                 # Global block
                 utils.update(global_config, block_config)
 
-    # Apply node configuration
+    # Compile node configuration
     for name, data in nodes_config.iteritems():
         node_config = {}
         utils.update(node_config, global_config)
