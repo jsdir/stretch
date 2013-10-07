@@ -197,6 +197,7 @@ class Environment(AuditedModel):
             self.map_instances(callback)
 
     def map_instances(self, callback):
+        settings.STRETCH_BATCH_SIZE
         # TODO: filter to batch size
         for instance in self.instances:
             callback(instance)
@@ -273,22 +274,40 @@ class Node(AuditedModel):
 class Instance(AuditedModel):
     environment = models.ForeignKey('Environment', related_name='instances')
     node = models.ForeignKey('Node', related_name='instances')
+    fqdn = models.TextField(unique=True)
 
     def reload(self):
-        pass
+        self.deactivate()
+        self.call('reload')
+        self.activate()
 
     def restart(self):
-        pass
+        self.deactivate()
+        self.call('restart')
+        self.activate()
 
     def load_config(self, config):
         # TODO: Relate config with self.node.pk
-        pass
+        self.deactivate()
+        self.call('load_config', self.node.pk, config)
+        self.activate()
 
     def deploy(self, sha=None):
+        self.call('deploy', sha)
         if sha:
             pass # TODO: Deploy with release sha
         else:
             pass # TODO: Deploy with local image with self.node.{pk, name}
+
+    def activate(self):
+        pass
+
+    def deactivate(self):
+        pass
+
+    def call(self, cmd, *args):
+        salt_client.call(tgt=self.fqdn)
+        # Set target to self.node.pk automatically
 
 
 class Deploy(AuditedModel):

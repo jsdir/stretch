@@ -221,7 +221,7 @@ STRETCH_TEMP_DIR = '/tmp/stretch'
 STRETCH_DATA_DIR = '/var/lib/stretch'
 DOMAIN_NAME = None
 SALT_CONF_PATH = '/etc/salt'
-BATCH_SIZE = 5
+STRETCH_BATCH_SIZE = 5
 REGISTRY_URL = 'registry.example.net:5000'
 
 try:

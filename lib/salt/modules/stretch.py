@@ -39,6 +39,28 @@ def remove_instance(instance_id):
     pass
 
 
+def reload():
+    pass
+
+
+def restart():
+    pass
+
+
+def load_config(config, instance_id):
+    # Relate config with instance_id
+    pass
+
+
+def deploy(sha, instance_id):
+    if sha:
+        # TODO: deploy with release sha
+    else:
+        # TODO: Deploy with local image with self.node.pk/name
+    # images with sha need to be pulled, first pull sets a lock,
+    # subsequent pulls wait for lock and use the newly-pulled images
+
+
 def pull(options):
     release_sha = options.get('release_sha')
     release_name = options.get('release_name')
