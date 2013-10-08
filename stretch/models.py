@@ -168,9 +168,9 @@ class Environment(AuditedModel):
 
         source.run_build_plugins(deploy, nodes)
         node_names = [node.name for node in nodes]
-        for instance in self.instances:
+        for instance in self.instances.all():
             if instance.node.name in node_names:
-                instance.reload()
+                instance.reload(remember=False)
 
     def get_config_path(self):
         return os.path.join(settings.STRETCH_DATA_DIR, 'environments',
@@ -197,10 +197,27 @@ class Environment(AuditedModel):
             self.map_instances(callback)
 
     def map_instances(self, callback):
-        settings.STRETCH_BATCH_SIZE
-        # TODO: filter to batch size
-        for instance in self.instances:
-            callback(instance)
+        instance_count = self.instances.count()
+        batch_size = min(instance_count / 2, settings.STRETCH_BATCH_SIZE)
+
+        remaining = self.instances.all()
+        pending = []
+
+        while remaining or pending:
+            while len(pending) < instance_count and remaining:
+                instance = remaining.pop()
+                if instance_count > 1:
+                    instance.deactivate()
+                callback(instance)
+                pending.append(instance)
+
+            time.sleep(0.5)
+
+            for instance in pending:
+                if instance.jobs_finished():
+                    if instance_count > 1:
+                        instance.activate()
+                    pending.remove(instance)
 
 
 class Release(AuditedModel):
@@ -276,28 +293,23 @@ class Instance(AuditedModel):
     node = models.ForeignKey('Node', related_name='instances')
     fqdn = models.TextField(unique=True)
 
-    def reload(self):
-        self.deactivate()
-        self.call('reload')
-        self.activate()
+    @property
+    def pending_jobs(self):
+        if not hasattr(self, '_pending_jobs'):
+            self._pending_jobs = []
+        return self._pending_jobs
 
-    def restart(self):
-        self.deactivate()
-        self.call('restart')
-        self.activate()
+    def reload(self, **kwargs):
+        self.call('reload', **kwargs)
 
-    def load_config(self, config):
-        # TODO: Relate config with self.node.pk
-        self.deactivate()
-        self.call('load_config', self.node.pk, config)
-        self.activate()
+    def restart(self, **kwargs):
+        self.call('restart', **kwargs)
 
-    def deploy(self, sha=None):
-        self.call('deploy', sha)
-        if sha:
-            pass # TODO: Deploy with release sha
-        else:
-            pass # TODO: Deploy with local image with self.node.{pk, name}
+    def load_config(self, config, **kwargs):
+        self.call('load_config', config, **kwargs)
+
+    def deploy(self, sha=None, **kwargs):
+        self.call('deploy', sha, **kwargs)
 
     def activate(self):
         pass
@@ -305,9 +317,29 @@ class Instance(AuditedModel):
     def deactivate(self):
         pass
 
-    def call(self, cmd, *args):
-        salt_client.call(tgt=self.fqdn)
-        # Set target to self.node.pk automatically
+    def call(self, cmd, *args, **kwargs):
+        from salt_utils import salt_client
+
+        jid = salt_client.cmd_async(self.fqdn, cmd, *args, **kwargs,
+                                    node_id=self.node.pk)
+
+        if kwargs.pop('remember', True):
+            self.pending_jobs.append(jid)
+
+        return jid
+
+    def jobs_finished(self):
+        from salt_utils import runner_client
+
+        active_jobs = runner_client.cmd('jobs.active', []).keys()
+
+        for jid in self.pending_jobs:
+            if jid in active_jobs:
+                return False
+            else:
+                self.pending_jobs.remove(jid)
+
+        return True
 
 
 class Deploy(AuditedModel):
