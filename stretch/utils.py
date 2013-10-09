@@ -9,11 +9,6 @@ import jinja2
 import collections
 import tempfile
 from distutils import dir_util
-
-#import salt.client
-#import salt.config
-#import salt.wheel
-
 from django.conf import settings
 
 
@@ -138,8 +133,3 @@ def generate_memorable_name():  # pragma: no cover
     ]
     return '%s-%s-%s' % (random.choice(adjectives), random.choice(nouns),
                          generate_random_hex(4))
-
-
-salt_master_config = None#salt.config.master_config(settings.SALT_CONF_PATH)
-wheel_client = None#salt.wheel.Wheel(salt_master_config)
-salt_client = None#salt.client.LocalClient()

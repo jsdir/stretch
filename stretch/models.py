@@ -10,6 +10,8 @@ from django.conf import settings
 from celery.contrib.methods import task
 
 from stretch import signals, sources, utils, backends, parser
+from stretch.salt_api import salt_client, wheel_client, runner_client
+
 
 log = logging.getLogger('stretch')
 alphanumeric = RegexValidator(r'^[a-zA-Z0-9_\-]*$',
@@ -318,10 +320,8 @@ class Instance(AuditedModel):
         pass
 
     def call(self, cmd, *args, **kwargs):
-        from salt_utils import salt_client
-
-        jid = salt_client.cmd_async(self.fqdn, cmd, *args, **kwargs,
-                                    node_id=self.node.pk)
+        jid = salt_client().cmd_async(self.fqdn, cmd, *args, **kwargs,
+                                      node_id=self.node.pk)
 
         if kwargs.pop('remember', True):
             self.pending_jobs.append(jid)
@@ -329,9 +329,7 @@ class Instance(AuditedModel):
         return jid
 
     def jobs_finished(self):
-        from salt_utils import runner_client
-
-        active_jobs = runner_client.cmd('jobs.active', []).keys()
+        active_jobs = runner_client().cmd('jobs.active', []).keys()
 
         for jid in self.pending_jobs:
             if jid in active_jobs:
