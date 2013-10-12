@@ -44,6 +44,8 @@ class DockerBackend(AutoloadingBackend):
     def delete_host(self, host):
         raise self.host_exception
 
+    # TODO: full implementation
+
 
 class RackspaceBackend(Backend):
     def __init__(self, options):
@@ -163,6 +165,8 @@ class RackspaceBackend(Backend):
             port=lb_object.host_port,
             condition='ENABLED'
         )
+
+    # TODO: full implementation
 
 
 def get_backend(env):
