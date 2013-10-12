@@ -64,6 +64,7 @@ class Environment(AuditedModel):
             self._backend = backends.get_backend(self)
         return self._backend
 
+    # TODO: make tasks non-concurrent
     @task
     def deploy(self, obj):
         log.info('Deploying %s to %s/%s' % (obj, self.system.name, self.name))
@@ -125,7 +126,7 @@ class Environment(AuditedModel):
             config_path = self.get_config_path()
             utils.makedirs(os.path.split(config_path)[0])
             snapshot.save_config(config_path)
-            # Start node piping
+            # TODO: Start node piping
 
         # TODO: Mount templates, use environment subdirectory to prevent clash
         
@@ -222,7 +223,7 @@ class Environment(AuditedModel):
                         instance.activate()
                     pending.remove(instance)
 
-        # Do simultaneously with node types
+        # TODO: Do simultaneously with node types (instance.node)
 
 
 class Release(AuditedModel):
@@ -262,7 +263,7 @@ class Release(AuditedModel):
         # Build docker images
         snapshot.build_and_push(release)
 
-        # Remove snapshot buffer
+        # Delete snapshot buffer
         utils.delete_path(tmp_path)
 
         # Build finished
@@ -294,11 +295,16 @@ class Node(AuditedModel):
 
 
 class Instance(AuditedModel):
+    # UUIDs are used for instances because the instance ids are included in
+    # the application context
     id = uuidfield.UUIDField(auto=True, primary_key=True)
+
     environment = models.ForeignKey('Environment', related_name='instances')
     host = models.ForeignKey('Host', related_name='instances')
     node = models.ForeignKey('Node', related_name='instances')
     fqdn = models.TextField(unique=True)
+
+    # TODO: port bindings
 
     @property
     def pending_jobs(self):
@@ -401,6 +407,8 @@ class Group(AuditedModel):
 class Host(AuditedModel):
     group = models.ForeignKey('Group', related_name='hosts')
     environment = models.ForeignKey('Environment', related_name='hosts')
+    # TODO: managed/unmanaged
+    # TODO: refactor original model
 
 
 class Deploy(AuditedModel):
