@@ -3,6 +3,7 @@ import logging
 import tarfile
 import json
 from distutils import dir_util
+import uuidfield
 from django.db import models
 from django.dispatch import receiver
 from django.core.validators import RegexValidator
@@ -67,7 +68,7 @@ class Environment(AuditedModel):
     def deploy(self, obj):
         log.info('Deploying %s to %s/%s' % (obj, self.system.name, self.name))
 
-        total_steps = 8
+        total_steps = 7
 
         def update_status(current_step, description):
             current_task.update_state(state='PROGRESS',
@@ -208,7 +209,7 @@ class Environment(AuditedModel):
         while remaining or pending:
             while len(pending) < instance_count and remaining:
                 instance = remaining.pop()
-                if instance_count > 1:
+                if instance_count > 1: # <- backend needs to handle this
                     instance.deactivate()
                 callback(instance)
                 pending.append(instance)
@@ -217,9 +218,11 @@ class Environment(AuditedModel):
 
             for instance in pending:
                 if instance.jobs_finished():
-                    if instance_count > 1:
+                    if instance_count > 1: # <- backend needs to handle this
                         instance.activate()
                     pending.remove(instance)
+
+        # Do simultaneously with node types
 
 
 class Release(AuditedModel):
@@ -291,7 +294,9 @@ class Node(AuditedModel):
 
 
 class Instance(AuditedModel):
+    id = uuidfield.UUIDField(auto=True, primary_key=True)
     environment = models.ForeignKey('Environment', related_name='instances')
+    host = models.ForeignKey('Host', related_name='instances')
     node = models.ForeignKey('Node', related_name='instances')
     fqdn = models.TextField(unique=True)
 
@@ -314,14 +319,18 @@ class Instance(AuditedModel):
         self.call('deploy', sha, **kwargs)
 
     def activate(self):
-        pass
+        group = self.host.group
+        if group:
+            group.activate(self.host)
 
     def deactivate(self):
-        pass
+        group = self.host.group
+        if group:
+            group.deactivate(self.host)
 
     def call(self, cmd, *args, **kwargs):
         jid = salt_client().cmd_async(self.fqdn, cmd, *args, **kwargs,
-                                      node_id=self.node.pk)
+                                      node_id=str(self.node.pk))
 
         if kwargs.pop('remember', True):
             self.pending_jobs.append(jid)
@@ -338,6 +347,60 @@ class Instance(AuditedModel):
                 self.pending_jobs.remove(jid)
 
         return True
+
+
+class LoadBalancer(models.Model):
+    port = models.IntegerField()
+    host_port = models.IntegerField()
+    protocol = models.TextField()
+    ip = models.GenericIPAddressField()
+    backend_id = models.CharField(max_length=32, unique=True)
+
+    @classmethod
+    def create(cls, group, port, host_port, protocol, hosts):
+        lb = cls(group=group, port=port, host_port=host_port,
+                 protocol=protocol)
+        lb.backend_id, lb.ip = lb.get_backend().create_lb(self, hosts)
+        return lb
+
+    def get_backend(self):
+        return self.group.environment.backend
+
+    def add_host(self, host):
+        self.get_backend().add_to_lb(self.backend_id, host)
+
+    def remove_host(self, host):
+        self.get_backend().remove_from_lb(self.backend_id, host)
+
+    def activate_host(self, host):
+        self.get_backend().activate_host(self.backend_id, host)
+
+    def deactivate_host(self, host):
+        self.get_backend().deactivate_host(self.backend_id, host)
+
+    def delete(self):
+        self.get_backend().delete_lb(self.backend_id)
+        super(LoadBalancer, self).delete()
+
+
+class Group(AuditedModel):
+    name = models.TextField(unique=True)
+    environment = models.ForeignKey('Environment', related_name='groups')
+    load_balancer = models.OneToOneField('LoadBalancer')
+    unique_together = ('environment', 'name')
+
+    def activate(self, host):
+        if self.load_balancer:
+            self.load_balancer.activate_host(host)
+
+    def deactivate(self, host):
+        if self.load_balancer:
+            self.load_balancer.deactivate_host(host)
+
+
+class Host(AuditedModel):
+    group = models.ForeignKey('Group', related_name='hosts')
+    environment = models.ForeignKey('Environment', related_name='hosts')
 
 
 class Deploy(AuditedModel):
