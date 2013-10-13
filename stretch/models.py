@@ -210,8 +210,7 @@ class Environment(AuditedModel):
         while remaining or pending:
             while len(pending) < instance_count and remaining:
                 instance = remaining.pop()
-                if instance_count > 1: # <- backend needs to handle this
-                    instance.deactivate()
+                instance.deactivate()
                 callback(instance)
                 pending.append(instance)
 
@@ -219,8 +218,7 @@ class Environment(AuditedModel):
 
             for instance in pending:
                 if instance.jobs_finished():
-                    if instance_count > 1: # <- backend needs to handle this
-                        instance.activate()
+                    instance.activate()
                     pending.remove(instance)
 
         # TODO: Do simultaneously with node types (instance.node)
