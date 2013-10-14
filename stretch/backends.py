@@ -4,8 +4,7 @@ from fabric.api import execute, run, env
 from celery.contrib.methods import task
 
 from django.conf import settings
-from stretch.utils import wheel_client
-from stretch.api import models
+from stretch.salt_api import caller_client
 from stretch import utils
 
 
@@ -36,28 +35,48 @@ class Backend(object):
 
 
 class AutoloadingBackend(Backend):
-    def load(self, existing_parser, new_parser, changed_files):
-        raise NotImplementedError
+    def __init__(self):
+        super(AutoloadingBackend, self).__init__()
 
 
 class DockerBackend(AutoloadingBackend):
-    def __init__(self):
+    def __init__(self, options):
         super(DockerBackend, self).__init__()
-        # All hosts in the docker backend are unmanaged.
-        self.host_exception = Exception(
-            'DockerBackend only uses unmanaged hosts.')
 
     def create_host(self):
-        raise self.host_exception
+        return address, fqdn, hostname
+        raise NotImplementedError
 
     def delete_host(self, host):
-        raise self.host_exception
+        raise NotImplementedError
 
-    # TODO: full implementation
+    def lb_add_host(self, lb_id, host):
+        raise NotImplementedError
+
+    def lb_remove_host(self, lb_id, host):
+        raise NotImplementedError
+
+    def lb_activate_host(self, lb_id, host):
+        raise NotImplementedError
+
+    def lb_deactivate_host(self, lb_id, host):
+        raise NotImplementedError
+
+    def create_lb(self, hosts):
+        # '127.0.0.1:<dynamic port>'
+        self.call_salt('stretch.create_lb', [hosts])
+
+    def delete_lb(self, lb_id):
+        self.call_salt('stretch.delete_lb', [lb_id])
+
+    def call_salt(self, *args, **kwargs):
+        caller_client().function(*args, **kwargs)
 
 
 class RackspaceBackend(Backend):
     def __init__(self, options):
+        super(RackspaceBackend, self).__init__()
+
         self.username = options.get('username')
         api_key = options.get('api_key')
         self.region = options.get('region').upper()
@@ -127,7 +146,7 @@ class RackspaceBackend(Backend):
 
     def create_lb(self, lb_object, hosts):
         if not hosts:
-            raise Exception('No hosts defined for load balancer')
+            raise Exception('no hosts defined for load balancer')
 
         vip = clb.VirtualIP(type='PUBLIC')
         nodes = [self.get_node(host, lb_object) for host in hosts]
@@ -144,7 +163,7 @@ class RackspaceBackend(Backend):
         pyrax.utils.wait_for_build(lb)
 
         if lb.status != 'ACTIVE':
-            raise Exception('Failed to create load balancer')
+            raise Exception('failed to create load balancer')
 
         # TODO: is this needed?
         lb.update(algorithm='LEAST_CONNECTIONS')
@@ -165,7 +184,7 @@ class RackspaceBackend(Backend):
         try:
             node = [n for n in lb.nodes if n.address == host.address][0]
         except KeyError:
-            raise Exception('Failed to get node from load balancer')
+            raise Exception('failed to get node from load balancer')
         node.delete()
         pyrax.utils.wait_for_build(lb)
 
@@ -189,5 +208,5 @@ for env_name, backends in settings.STRETCH_BACKENDS.iteritems():
     for class_name, options in backends.iteritems():
         # Only one backend per environment
         backend_class = utils.get_class(class_name)
-        backend_map[env_name] = source_class(options)
+        backend_map[env_name] = backend_class(options)
         break

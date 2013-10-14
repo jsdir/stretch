@@ -37,7 +37,10 @@ class System(AuditedModel):
         if (isinstance(self.source, sources.AutoloadableSource) and
                 self.source.autoload):
             for env in self.environments.all():
-                env.deploy.delay(self.source)
+                if env.has_autoloading_backend():
+                    env.deploy.delay(self.source)
+                else:
+                    log.debug('Backend does not autoload. Skipping.')
 
     @property
     def source(self):
@@ -175,6 +178,10 @@ class Environment(AuditedModel):
         for instance in self.instances.all():
             if instance.node.name in node_names:
                 instance.reload(remember=False)
+
+    def has_autoloading_backend(self):
+        return isinstance(self.backend, backends.AutoloadingBackend)
+
 
     def get_config_path(self):
         return os.path.join(settings.STRETCH_DATA_DIR, 'environments',
@@ -323,18 +330,16 @@ class Instance(AuditedModel):
         self.call('deploy', sha, **kwargs)
 
     def activate(self):
-        group = self.host.group
-        if group:
-            group.activate(self.host)
+        if self.host.group:
+            self.host.group.activate(self.host)
 
     def deactivate(self):
-        group = self.host.group
-        if group:
-            group.deactivate(self.host)
+        if self.host.group:
+            self.host.group.deactivate(self.host)
 
     def call(self, cmd, *args, **kwargs):
-        jid = salt_client().cmd_async(self.fqdn, cmd, *args, **kwargs,
-                                      node_id=str(self.node.pk))
+        kwargs['node_id'] = str(self.node.pk)
+        jid = salt_client().cmd_async(self.fqdn, cmd, *args, **kwargs)
 
         if kwargs.pop('remember', True):
             self.pending_jobs.append(jid)
@@ -405,8 +410,11 @@ class Group(AuditedModel):
 class Host(AuditedModel):
     group = models.ForeignKey('Group', related_name='hosts')
     environment = models.ForeignKey('Environment', related_name='hosts')
-    # TODO: managed/unmanaged
+    managed = models.BooleanField()
+    address = models.GenericIPAddressField()
     # TODO: refactor original model
+
+
 
 
 class Deploy(AuditedModel):
@@ -436,7 +444,10 @@ def on_sync_source(sender, snapshot, nodes, **kwargs):
     if system_name:
         system = System.objects.get(name=system_name)
         for env in system.environments.all():
-            env.autoload.delay(source, nodes)
+            if env.has_autoloading_backend():
+                env.autoload.delay(source, nodes)
+            else:
+                log.debug('Backend does not autoload. Skipping.')
 
 
 @receiver(signals.load_sources)

@@ -30,3 +30,10 @@ def runner_client():
     if not client:
         client = clients['runner'] = salt.runner.RunnerClient(master_config())
     return client
+
+
+def caller_client():
+    client = clients.get('caller')
+    if not client:
+        client = clients['caller'] = salt.client.Caller()
+    return client
