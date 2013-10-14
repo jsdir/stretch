@@ -371,16 +371,16 @@ class LoadBalancer(models.Model):
         return self.group.environment.backend
 
     def add_host(self, host):
-        self.get_backend().add_to_lb(self.backend_id, host)
+        self.get_backend().lb_add_host(self.backend_id, host)
 
     def remove_host(self, host):
-        self.get_backend().remove_from_lb(self.backend_id, host)
+        self.get_backend().lb_remove_host(self.backend_id, host)
 
     def activate_host(self, host):
-        self.get_backend().activate_host(self.backend_id, host)
+        self.get_backend().lb_activate_host(self.backend_id, host)
 
     def deactivate_host(self, host):
-        self.get_backend().deactivate_host(self.backend_id, host)
+        self.get_backend().lb_deactivate_host(self.backend_id, host)
 
     def delete(self):
         self.get_backend().delete_lb(self.backend_id)

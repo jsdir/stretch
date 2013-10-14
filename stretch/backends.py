@@ -16,13 +16,22 @@ class Backend(object):
     def delete_host(self, host):
         raise NotImplementedError
 
-    def add_to_lb(self, lb_id, host):
+    def lb_add_host(self, lb_id, host):
         raise NotImplementedError
 
-    def remove_from_lb(self, lb_id, host):
+    def lb_remove_host(self, lb_id, host):
         raise NotImplementedError
 
-    def create_lb(self, port):
+    def lb_activate_host(self, lb_id, host):
+        raise NotImplementedError
+
+    def lb_deactivate_host(self, lb_id, host):
+        raise NotImplementedError
+
+    def create_lb(self, hosts):
+        raise NotImplementedError
+
+    def delete_lb(self, lb_id):
         raise NotImplementedError
 
 
@@ -137,6 +146,7 @@ class RackspaceBackend(Backend):
         if lb.status != 'ACTIVE':
             raise Exception('Failed to create load balancer')
 
+        # TODO: is this needed?
         lb.update(algorithm='LEAST_CONNECTIONS')
         return str(lb.id), lb.sourceAddresses['ipv4Public']
 
