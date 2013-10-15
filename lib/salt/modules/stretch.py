@@ -27,7 +27,8 @@ class Instance(object):
         pass
 
 
-def add_instance(instance_id, node_id, node_name, environment_id, ports):
+def add_instance(instance_id, node_id, ports):
+    # ports = [(80, 80), (443, 443)]
     # Add instance to global instance table
     # Initialize instance
     pass

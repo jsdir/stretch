@@ -64,6 +64,7 @@ class DockerBackend(AutoloadingBackend):
 
     def create_lb(self, lb, hosts):
         self.call_salt('stretch.create_lb', [host.fqdn for host in hosts])
+        return lb_id, lb_address
         # TODO: return lb address
 
     def delete_lb(self, lb):
@@ -137,7 +138,7 @@ class RackspaceBackend(Backend):
         nodes = [self.get_node(host, lb) for host in hosts]
 
         lb_obj = self.clb.create(
-            str(utils.generate_random_hex(16)),
+            str(utils.generate_random_hex(8)),
             port=lb.port,
             protocol=lb.protocol,
             nodes=nodes,

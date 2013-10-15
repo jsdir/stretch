@@ -303,6 +303,12 @@ class Node(AuditedModel):
     unique_together = ('system', 'name')
 
 
+class PortBinding(AuditedModel):
+    instance = models.ForeignKey('Instance', related_name='port_bindings')
+    source = models.IntegerField()
+    destination = models.IntegerField()
+
+
 class Instance(AuditedModel):
     # UUIDs are used for instances because the instance ids are included in
     # the application context
@@ -311,9 +317,25 @@ class Instance(AuditedModel):
     environment = models.ForeignKey('Environment', related_name='instances')
     host = models.ForeignKey('Host', related_name='instances')
     node = models.ForeignKey('Node', related_name='instances')
-    fqdn = models.TextField(unique=True)
 
-    # TODO: port bindings
+    @classmethod
+    def create(cls, *args, **kwargs):
+        instance = cls(*args, **kwargs)
+
+        # TODO: deal with port conflicts
+        instance_ports = []
+        for port in instance.node.ports:
+            instance_ports.append((port, port))
+            binding = PortBinding(from=port, to=port, instance=instance)
+            binding.save()
+
+        instance.call('add_instance', instance_ports)
+        instance.save()
+        return instance
+
+    def delete(self):
+        self.call('remove_instance')
+        super(Instance, self).delete()
 
     @property
     def pending_jobs(self):
@@ -341,9 +363,11 @@ class Instance(AuditedModel):
         if self.host.group:
             self.host.group.deactivate(self.host)
 
-    def call(self, cmd, *args, **kwargs):
+    def call(self, *args, **kwargs):
+        kwargs['instance_id'] = str(self.pk)
         kwargs['node_id'] = str(self.node.pk)
-        jid = salt_client().cmd_async(self.fqdn, cmd, *args, **kwargs)
+
+        jid = salt_client().cmd_async(self.host.fqdn, *args, **kwargs)
 
         if kwargs.pop('remember', True):
             self.pending_jobs.append(jid)
@@ -404,31 +428,35 @@ class Host(AuditedModel):
     domain_name = models.TextField()
     group = models.ForeignKey('Group', related_name='hosts')
     environment = models.ForeignKey('Environment', related_name='hosts')
-    managed = models.BooleanField()
     address = models.GenericIPAddressField()
 
     @classmethod
-    def create(cls, env, managed=True):
-        hostname = utils.generate_random_hex(8)
+    def create(cls, env, group=None):
         domain_name = env.system.domain_name
 
-        if domain_name:
-            fqdn = '%s.%s' % (hostname, domain_name)
-        else:
-            fqdn = hostname
+        hostname = (utils.generate_random_hex(8) if group
+                    else fqdn.replace(domain_name, ''))
+        fqdn = '%s.%s' % (hostname, domain_name) if domain_name else hostname
 
         host = cls(fqdn=fqdn, hostname=hostname, domain_name=domain_name,
-                   environment=env, managed=managed)
+                   environment=env, group=group)
 
-        host.address = env.backend.create_host(host)
+        if group:
+            host.address = env.backend.create_host(host)
+
         host.finish_provisioning()
+
+        if group:
+            Instance.create(environment=host.environment, host=host,
+                            node=host.group.node)
+
         host.save()
         return host
 
     def delete(self):
-        if self.managed:
-            self.environment.backend.delete_host(self)
         super(Host, self).delete()
+        if self.group:
+            self.environment.backend.delete_host(self)
 
     def finish_provisioning(self):
         self.accept_key()
@@ -506,7 +534,7 @@ class Group(AuditedModel):
 
     @task
     def create_host(self):
-        host = Host.create(self.environment)
+        host = Host.create(self.environment, self)
         if self.load_balancer:
             self.load_balancer.add_host(host)
 
@@ -519,6 +547,8 @@ class Group(AuditedModel):
     @property
     def host_count(self):
         return self.hosts.count()
+
+    # TODO: delete chaining for host, group, instance, env, system
 
 
 class Deploy(AuditedModel):
