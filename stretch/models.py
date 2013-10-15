@@ -326,7 +326,8 @@ class Instance(AuditedModel):
         instance_ports = []
         for port in instance.node.ports:
             instance_ports.append((port, port))
-            binding = PortBinding(from=port, to=port, instance=instance)
+            binding = PortBinding(source=port, destination=port,
+                                  instance=instance)
             binding.save()
 
         instance.call('add_instance', instance_ports)
