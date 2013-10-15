@@ -3,11 +3,13 @@ import logging
 import tarfile
 import json
 from distutils import dir_util
+import jsonfield
 import uuidfield
 from django.db import models
 from django.dispatch import receiver
 from django.core.validators import RegexValidator
 from django.conf import settings
+from celery import current_task, group
 from celery.contrib.methods import task
 
 from stretch import signals, sources, utils, backends, parser
@@ -29,6 +31,7 @@ class AuditedModel(models.Model):
 
 class System(AuditedModel):
     name = models.TextField(unique=True, validators=[alphanumeric])
+    domain_name = models.TextField(unique=True)
 
     def create_release(self, options):
         return Release.create(self.source.pull(options), system=self)
@@ -294,8 +297,9 @@ class Release(AuditedModel):
 
 
 class Node(AuditedModel):
+    name = models.TextField(validators=[alphanumeric])
     system = models.ForeignKey('System', related_name='nodes')
-    name = models.TextField()
+    ports = JSONField()
     unique_together = ('system', 'name')
 
 
@@ -362,39 +366,96 @@ class LoadBalancer(models.Model):
     port = models.IntegerField()
     host_port = models.IntegerField()
     protocol = models.TextField()
-    ip = models.GenericIPAddressField()
+    address = models.GenericIPAddressField()
     backend_id = models.CharField(max_length=32, unique=True)
 
     @classmethod
     def create(cls, group, port, host_port, protocol, hosts):
         lb = cls(group=group, port=port, host_port=host_port,
                  protocol=protocol)
-        lb.backend_id, lb.ip = lb.get_backend().create_lb(self, hosts)
+        backend = group.environment.get_backend()
+        lb.backend_id, lb.address = backend.create_lb(lb, hosts)
+        lb.save()
         return lb
 
     def get_backend(self):
         return self.group.environment.backend
 
     def add_host(self, host):
-        self.get_backend().lb_add_host(self.backend_id, host)
+        self.get_backend().lb_add_host(self, host)
 
     def remove_host(self, host):
-        self.get_backend().lb_remove_host(self.backend_id, host)
+        self.get_backend().lb_remove_host(self, host)
 
     def activate_host(self, host):
-        self.get_backend().lb_activate_host(self.backend_id, host)
+        self.get_backend().lb_activate_host(self, host)
 
     def deactivate_host(self, host):
-        self.get_backend().lb_deactivate_host(self.backend_id, host)
+        self.get_backend().lb_deactivate_host(self, host)
 
     def delete(self):
-        self.get_backend().delete_lb(self.backend_id)
+        self.get_backend().delete_lb(self)
         super(LoadBalancer, self).delete()
 
 
+class Host(AuditedModel):
+    fqdn = models.TextField(unique=True)
+    hostname = models.TextField()
+    domain_name = models.TextField()
+    group = models.ForeignKey('Group', related_name='hosts')
+    environment = models.ForeignKey('Environment', related_name='hosts')
+    managed = models.BooleanField()
+    address = models.GenericIPAddressField()
+
+    @classmethod
+    def create(cls, env, managed=True):
+        hostname = utils.generate_random_hex(8)
+        domain_name = env.system.domain_name
+
+        if domain_name:
+            fqdn = '%s.%s' % (hostname, domain_name)
+        else:
+            fqdn = hostname
+
+        host = cls(fqdn=fqdn, hostname=hostname, domain_name=domain_name,
+                   environment=env, managed=managed)
+
+        host.address = env.backend.create_host(host)
+        host.finish_provisioning()
+        host.save()
+        return host
+
+    def delete(self):
+        if self.managed:
+            self.environment.backend.delete_host(self)
+        super(Host, self).delete()
+
+    def finish_provisioning(self):
+        self.accept_key()
+        self.sync()
+
+    def accept_key(self):
+        wheel_client().call_func('key.accept', self.fqdn)
+
+    def delete_key(self):
+        wheel_client().call_func('key.delete', self.fqdn)
+
+    def sync(self):
+        # Install dependencies
+        self.call_salt('state.highstate')
+        # Synchronize modules
+        self.call_salt('saltutil.sync_all')
+
+    def call_salt(self, *args, **kwargs):
+        salt_client().cmd(self.fqdn, *args, **kwargs)
+
+
 class Group(AuditedModel):
-    name = models.TextField(unique=True)
+    name = models.TextField(validators=[alphanumeric])
     environment = models.ForeignKey('Environment', related_name='groups')
+    minimum_nodes = models.IntegerField(default=1)
+    maximum_nodes = models.IntegerField(default=None)
+    node = models.ForeignKey('Node')
     load_balancer = models.OneToOneField('LoadBalancer')
     unique_together = ('environment', 'name')
 
@@ -406,15 +467,58 @@ class Group(AuditedModel):
         if self.load_balancer:
             self.load_balancer.deactivate_host(host)
 
+    def scale_up(self, amount):
+        self.check_valid_amount(self.host_count + amount)
+        group(self.create_host.s() for _ in xrange(amount))().get()
+        self.environment.update_configuration()
 
-class Host(AuditedModel):
-    group = models.ForeignKey('Group', related_name='hosts')
-    environment = models.ForeignKey('Environment', related_name='hosts')
-    managed = models.BooleanField()
-    address = models.GenericIPAddressField()
-    # TODO: refactor original model
+    def scale_down(self, amount):
+        self.check_valid_amount(self.host_count - amount)
 
+        hosts = self.hosts[0:amount]
 
+        for host in hosts:
+            host.group = None
+            host.save()
+
+        self.environment.update_configuration()
+        group(self.delete_host.s(host) for host in hosts)().get()
+
+    def create_load_balancer(self, port, host_port, protocol):
+        if not self.load_balancer and self.host_count() > 0:
+            self.load_balancer = LoadBalancer.create(
+                port, host_port, protocol, self.hosts.all())
+
+    def scale_to(self, amount):
+        relative_amount = amount - self.host_count
+        if relative_amount > 0:
+            self.scale_up(relative_amount)
+        elif relative_amount < 0:
+            self.scale_down(-relative_amount)
+
+    def check_valid_amount(self, amount):
+        if self.maximum_nodes == None:
+            valid = amount >= self.minimum_nodes
+        else:
+            valid = self.minimum_nodes <= amount <= self.maximum_nodes
+        if not valid:
+            raise Exception('invalid scaling amount')
+
+    @task
+    def create_host(self):
+        host = Host.create(self.environment)
+        if self.load_balancer:
+            self.load_balancer.add_host(host)
+
+    @task
+    def delete_host(self, host):
+        if self.load_balancer:
+            self.load_balancer.remove_host(host)
+        host.delete()
+
+    @property
+    def host_count(self):
+        return self.hosts.count()
 
 
 class Deploy(AuditedModel):
@@ -436,7 +540,6 @@ class Deploy(AuditedModel):
 
 @receiver(signals.sync_source)
 def on_sync_source(sender, snapshot, nodes, **kwargs):
-    # TODO: is snapshot needed?
     source = sender
     log.info('Source %s changed' % source)
     log.info('Changed nodes: %s' % nodes)
