@@ -180,10 +180,12 @@ class FileSystemSource(AutoloadableSource):
 
 
 def get_sources(system):
+    source_map = get_source_map(settings.STRETCH_SOURCES)
     return source_map.get(system.name, [])
 
 
 def get_system(source):
+    source_map = get_source_map(settings.STRETCH_SOURCES)
     for system_name, sources in source_map.iteritems():
         if source in sources:
             return system_name
@@ -191,17 +193,22 @@ def get_system(source):
 
 
 def watch():
+    source_map = get_source_map(settings.STRETCH_SOURCES)
     for system_name, sources in source_map.iteritems():
         for source in sources:
-            if isinstance(source, AutoloadableSource):
+            if hasattr(source, 'watch'):
                 source.watch()
 
 
-source_map = {}
+@utils.memoized
+def get_source_map(source_dict):
+    source_map = {}
 
-for system_name, sources in settings.STRETCH_SOURCES.iteritems():
-    source_map[system_name] = []
+    for system_name, sources in source_dict.iteritems():
+        source_map[system_name] = []
 
-    for class_name, options in sources.iteritems():
-        source_class = utils.get_class(class_name)
-        source_map[system_name].append(source_class(options))
+        for class_name, options in sources.iteritems():
+            source_class = utils.get_class(class_name)
+            source_map[system_name].append(source_class(options))
+
+    return source_map

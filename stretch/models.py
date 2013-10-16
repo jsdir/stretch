@@ -45,8 +45,7 @@ class System(AuditedModel):
         return Release.create(self.source.pull(options), system=self)
 
     def load_sources(self):
-        if (isinstance(self.source, sources.AutoloadableSource) and
-                self.source.autoload):
+        if (hasattr(self.source, 'autoload') and self.source.autoload):
             for env in self.environments.all():
                 if env.has_autoloading_backend():
                     env.deploy.delay(self.source)

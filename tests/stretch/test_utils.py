@@ -26,3 +26,7 @@ def test_update():
             'a': 5
         }
     })
+
+# Test start to finish of all 4 source to backend transfer methods,
+# - if signals are triggered
+# - autoloading environments, systems, get_sources, get_backends
