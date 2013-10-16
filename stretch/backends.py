@@ -1,9 +1,8 @@
 import os
 import pyrax
 import logging
-from fabric.api import execute, run, env
+from fabric.api import run, env
 from fabric.contrib.files import upload_template
-from celery.contrib.methods import task
 
 from django.conf import settings
 from stretch.salt_api import caller_client
@@ -69,7 +68,7 @@ class DockerBackend(AutoloadingBackend):
 
     def create_lb(self, lb, hosts):
         self.call_salt('stretch.create_lb', [host.fqdn for host in hosts])
-        return lb_id, lb_address
+        # return lb_id, lb_address
         # TODO: return lb address
 
     def delete_lb(self, lb):
@@ -218,16 +217,21 @@ class RackspaceBackend(Backend):
 
 
 def get_backend(env):
+    backend_map = get_backend_map(settings.STRETCH_BACKENDS)
     return backend_map.get(env.system.name, {}).get(env.name)
 
 
-backend_map = {}
+@utils.memoized
+def get_backend_map(backend_dict):
+    backend_map = {}
 
-for system_name, envs in settings.STRETCH_BACKENDS.iteritems():
-    backend_map[system_name] = {}
-    for env_name, backends in envs.iteritems():
-        for class_name, options in backends.iteritems():
-            # Only one backend per environment
-            backend_class = utils.get_class(class_name)
-            backend_map[system_name][env_name] = backend_class(options)
-            break
+    for system_name, envs in backend_dict.iteritems():
+        backend_map[system_name] = {}
+        for env_name, backends in envs.iteritems():
+            for class_name, options in backends.iteritems():
+                # Only one backend per environment
+                backend_class = utils.get_class(class_name)
+                backend_map[system_name][env_name] = backend_class(options)
+                break
+
+    return backend_map
