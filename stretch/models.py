@@ -30,6 +30,13 @@ class AuditedModel(models.Model):
         abstract = True
 
 
+class Service(models.Model):
+    name = models.TextField(validators=[alphanumeric])
+    system = models.ForeignKey('System', related_name='services')
+    data = jsonfield.JSONField()
+    unique_together = ('system', 'name')
+
+
 class System(AuditedModel):
     name = models.TextField(unique=True, validators=[alphanumeric])
     domain_name = models.TextField(unique=True, null=True)
@@ -218,7 +225,7 @@ class Environment(AuditedModel):
         instance_count = self.instances.count()
         batch_size = min(instance_count / 2, settings.STRETCH_BATCH_SIZE)
 
-        remaining = self.instances.all()
+        remaining = list(self.instances.all())
         pending = []
 
         while remaining or pending:
@@ -335,11 +342,11 @@ class Instance(AuditedModel):
                                   instance=instance)
             binding.save()
 
-        instance.call('add_instance', instance_ports)
+        instance.call('stretch.add_instance', instance_ports)
         return instance
 
     def delete(self):
-        self.call('remove_instance')
+        self.call('stretch.remove_instance')
         super(Instance, self).delete()
 
     @property
@@ -349,16 +356,16 @@ class Instance(AuditedModel):
         return self._pending_jobs
 
     def reload(self, **kwargs):
-        self.call('reload', **kwargs)
+        self.call('stretch.reload', **kwargs)
 
     def restart(self, **kwargs):
-        self.call('restart', **kwargs)
+        self.call('stretch.restart', **kwargs)
 
     def load_config(self, config, **kwargs):
-        self.call('load_config', config, **kwargs)
+        self.call('stretch.load_config', config, **kwargs)
 
     def deploy(self, sha=None, **kwargs):
-        self.call('deploy', sha, **kwargs)
+        self.call('stretch.deploy', sha, **kwargs)
 
     def activate(self):
         if self.host.group:
@@ -398,16 +405,9 @@ class LoadBalancer(models.Model):
     address = models.GenericIPAddressField()
     backend_id = models.CharField(max_length=32, unique=True)
 
-    @classmethod
-    def create(cls, group, port, host_port, protocol, hosts):
-        lb = cls(group=group, port=port, host_port=host_port,
-                 protocol=protocol)
-
-        backend = lb.get_backend()
-        lb.backend_id, lb.address = backend.create_lb(lb, hosts)
-
-        lb.save()
-        return lb
+    def activate_with_hosts(self, hosts):
+        backend = self.get_backend()
+        self.backend_id, self.address = backend.create_lb(self, hosts)
 
     def get_backend(self):
         backend = self.group.environment.backend
@@ -436,7 +436,7 @@ class Host(AuditedModel):
     fqdn = models.TextField(unique=True)
     hostname = models.TextField()
     domain_name = models.TextField()
-    group = models.ForeignKey('Group', related_name='hosts')
+    group = models.ForeignKey('Group', related_name='hosts', null=True)
     environment = models.ForeignKey('Environment', related_name='hosts')
     address = models.GenericIPAddressField()
 
@@ -466,11 +466,12 @@ class Host(AuditedModel):
         return host
 
     def delete(self):
-        super(Host, self).delete()
+        self.delete_key()
         if self.group:
             if not self.environment.backend:
                 raise Exception('no backend defined') # TODO: common specific exceptions
             self.environment.backend.delete_host(self)
+        super(Host, self).delete()
 
     def finish_provisioning(self):
         self.accept_key()
@@ -532,19 +533,21 @@ class Group(AuditedModel):
     def scale_down(self, amount):
         self.check_valid_amount(self.host_count - amount)
 
-        hosts = self.hosts[0:amount]
+        hosts = self.hosts.all()[0:amount]
 
         for host in hosts:
             host.group = None
             host.save()
 
         self.environment.update_config()
-        group(self.delete_host.s(host) for host in hosts)().get()
+        group(self.delete_host.s(host.pk) for host in hosts)().get()
 
     def create_load_balancer(self, port, host_port, protocol):
-        if not self.load_balancer and self.host_count() > 0:
-            self.load_balancer = LoadBalancer.create(
-                port, host_port, protocol, self.hosts.all())
+        if not self.load_balancer and self.host_count > 0:
+            self.load_balancer = LoadBalancer(port=port, host_port=host_port,
+                                              protocol=protocol)
+            self.load_balancer.activate_with_hosts(self.hosts.all())
+            self.load_balancer.save()
 
     def scale_to(self, amount):
         relative_amount = amount - self.host_count
@@ -568,7 +571,8 @@ class Group(AuditedModel):
             self.load_balancer.add_host(host)
 
     @task
-    def delete_host(self, host):
+    def delete_host(self, host_id):
+        host = Host.get(pk=host_id)
         if self.load_balancer:
             self.load_balancer.remove_host(host)
         host.delete()

@@ -2,8 +2,8 @@ class ServicesContext(object):
     def __init__(self, environment):
         self.services = environment.system.services
 
-    def __getattribute__(self, attr):
-        data = None
+    def __getitem__(self, index):
+        data = {}
         service = self.services.objects.get(name=attr)
         if service:
             data = service.data

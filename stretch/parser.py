@@ -347,10 +347,10 @@ def get_build_files(path):
 
 def render_config(config, deploy):
 
-    def get_config(data):
-        contexts = [contexts.create_deploy_context(deploy)]
-        config = utils.render_template(data, contexts)
-        return yaml.load(config)
+    def get_config(data, default={}):
+        context_list = [contexts.create_deploy_context(deploy)]
+        config = utils.render_template(data, context_list)
+        return yaml.load(config) or default
 
     result = {}
     global_config = {}
@@ -385,7 +385,7 @@ def render_config(config, deploy):
         node_config = {}
         utils.update(node_config, global_config)
         utils.update(node_config, nodes_config.get(name, {}))
-        utils.update(node_config, (get_config(data) or {}))
+        utils.update(node_config, get_config(data))
 
         if result.has_key(name):
             utils.update(result[name], node_config)
