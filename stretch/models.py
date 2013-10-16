@@ -2,6 +2,7 @@ import os
 import logging
 import tarfile
 import json
+import time
 from distutils import dir_util
 import jsonfield
 import uuidfield
@@ -31,7 +32,7 @@ class AuditedModel(models.Model):
 
 class System(AuditedModel):
     name = models.TextField(unique=True, validators=[alphanumeric])
-    domain_name = models.TextField(unique=True)
+    domain_name = models.TextField(unique=True, null=True)
 
     def create_release(self, options):
         return Release.create(self.source.pull(options), system=self)
@@ -61,7 +62,7 @@ class Environment(AuditedModel):
     name = models.TextField(validators=[alphanumeric])
     auto_deploy = models.BooleanField(default=False)
     system = models.ForeignKey('System', related_name='environments')
-    current_release = models.ForeignKey('Release')
+    current_release = models.ForeignKey('Release', null=True)
     using_source = models.BooleanField(default=False)
 
     @property
@@ -78,6 +79,7 @@ class Environment(AuditedModel):
         total_steps = 7
 
         def update_status(current_step, description):
+            log.info(description)
             current_task.update_state(state='PROGRESS',
                 meta={
                     'description': description,
@@ -90,7 +92,7 @@ class Environment(AuditedModel):
         deploy = Deploy.create(
             environment=self,
             existing_release=existing_release,
-            task_id=current_task.task_id
+            task_id=current_task.request.id
         )
 
         if isinstance(obj, sources.Source):
@@ -101,7 +103,9 @@ class Environment(AuditedModel):
         else:
             raise Exception('cannot deploy object "%s"' % obj)
 
+        log.info('Saving deploy')
         deploy.save()
+        log.info('Finished saving deploy')
 
         # Pull release
         update_status(1, 'Pulling release')
@@ -249,7 +253,7 @@ class Release(AuditedModel):
         )
 
         # Copy to temporary directory
-        tmp_path = utils.tmp_dir(obj.pull())
+        tmp_path = utils.tmp_dir(path)
 
         # Create snapshot
         snapshot = parser.Snapshot(tmp_path)
@@ -293,13 +297,13 @@ class Release(AuditedModel):
             return json.loads(config_file.read())
 
     def get_data_dir(self):
-        return os.path.join(settings.DATA_DIR, 'releases', self.sha)
+        return os.path.join(settings.STRETCH_DATA_DIR, 'releases', self.sha)
 
 
 class Node(AuditedModel):
     name = models.TextField(validators=[alphanumeric])
     system = models.ForeignKey('System', related_name='nodes')
-    ports = JSONField()
+    ports = jsonfield.JSONField()
     unique_together = ('system', 'name')
 
 
@@ -321,6 +325,7 @@ class Instance(AuditedModel):
     @classmethod
     def create(cls, *args, **kwargs):
         instance = cls(*args, **kwargs)
+        instance.save()
 
         # TODO: deal with port conflicts
         instance_ports = []
@@ -331,7 +336,6 @@ class Instance(AuditedModel):
             binding.save()
 
         instance.call('add_instance', instance_ports)
-        instance.save()
         return instance
 
     def delete(self):
@@ -398,12 +402,17 @@ class LoadBalancer(models.Model):
     def create(cls, group, port, host_port, protocol, hosts):
         lb = cls(group=group, port=port, host_port=host_port,
                  protocol=protocol)
-        backend = group.environment.get_backend()
+
+        backend = lb.get_backend()
         lb.backend_id, lb.address = backend.create_lb(lb, hosts)
+
         lb.save()
         return lb
 
     def get_backend(self):
+        backend = self.group.environment.backend
+        if not backend:
+            raise Exception('no backend defined')
         return self.group.environment.backend
 
     def add_host(self, host):
@@ -443,20 +452,24 @@ class Host(AuditedModel):
                    environment=env, group=group)
 
         if group:
+            if not env.backend:
+                raise Exception('no backend defined') # TODO: common specific exceptions
             host.address = env.backend.create_host(host)
 
         host.finish_provisioning()
+        host.save()
 
         if group:
             Instance.create(environment=host.environment, host=host,
                             node=host.group.node)
 
-        host.save()
         return host
 
     def delete(self):
         super(Host, self).delete()
         if self.group:
+            if not self.environment.backend:
+                raise Exception('no backend defined') # TODO: common specific exceptions
             self.environment.backend.delete_host(self)
 
     def finish_provisioning(self):
@@ -464,15 +477,30 @@ class Host(AuditedModel):
         self.sync()
 
     def accept_key(self):
-        wheel_client().call_func('key.accept', self.fqdn)
+        log.info('Accepting minion key (%s)...' % self.fqdn)
+
+        success = False
+        for _ in xrange(30):
+            result = wheel_client().call_func('key.accept', match=self.fqdn)
+            if result != {}:
+                success = True
+                break
+            time.sleep(2.0)
+
+        if success:
+            log.info('Accepted minion key')
+        else:
+            raise Exception('failed to accept minion key')
 
     def delete_key(self):
-        wheel_client().call_func('key.delete', self.fqdn)
+        wheel_client().call_func('key.delete', match=self.fqdn)
 
     def sync(self):
         # Install dependencies
+        log.info('Installing dependencies...')
         self.call_salt('state.highstate')
         # Synchronize modules
+        log.info('Synchronizing modules...')
         self.call_salt('saltutil.sync_all')
 
     def call_salt(self, *args, **kwargs):
@@ -483,9 +511,9 @@ class Group(AuditedModel):
     name = models.TextField(validators=[alphanumeric])
     environment = models.ForeignKey('Environment', related_name='groups')
     minimum_nodes = models.IntegerField(default=1)
-    maximum_nodes = models.IntegerField(default=None)
+    maximum_nodes = models.IntegerField(null=True)
     node = models.ForeignKey('Node')
-    load_balancer = models.OneToOneField('LoadBalancer')
+    load_balancer = models.OneToOneField('LoadBalancer', null=True)
     unique_together = ('environment', 'name')
 
     def activate(self, host):
@@ -499,7 +527,7 @@ class Group(AuditedModel):
     def scale_up(self, amount):
         self.check_valid_amount(self.host_count + amount)
         group(self.create_host.s() for _ in xrange(amount))().get()
-        self.environment.update_configuration()
+        self.environment.update_config()
 
     def scale_down(self, amount):
         self.check_valid_amount(self.host_count - amount)
@@ -510,7 +538,7 @@ class Group(AuditedModel):
             host.group = None
             host.save()
 
-        self.environment.update_configuration()
+        self.environment.update_config()
         group(self.delete_host.s(host) for host in hosts)().get()
 
     def create_load_balancer(self, port, host_port, protocol):
@@ -553,8 +581,10 @@ class Group(AuditedModel):
 
 
 class Deploy(AuditedModel):
-    release = models.ForeignKey('Release')
-    existing_release = models.ForeignKey('Release')
+    release = models.ForeignKey('Release', related_name='deploy_releases',
+                                null=True)
+    existing_release = models.ForeignKey('Release',
+        related_name='deploy_existing_releases', null=True)
     environment = models.ForeignKey('Environment', related_name='deploys')
     task_id = models.CharField(max_length=128)
 

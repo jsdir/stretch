@@ -79,6 +79,7 @@ def clear_path(path):
 
 
 def tmp_dir(path=None):
+    makedirs(settings.STRETCH_TEMP_DIR)
     tmp_path = tempfile.mkdtemp(prefix='%s/' % settings.STRETCH_TEMP_DIR)
     if path:
         dir_util.copy_tree(path, tmp_path)

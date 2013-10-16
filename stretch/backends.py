@@ -1,11 +1,16 @@
 import os
 import pyrax
+import logging
 from fabric.api import execute, run, env
+from fabric.contrib.files import upload_template
 from celery.contrib.methods import task
 
 from django.conf import settings
 from stretch.salt_api import caller_client
 from stretch import utils
+
+
+log = logging.getLogger('stretch')
 
 
 class Backend(object):
@@ -82,6 +87,7 @@ class RackspaceBackend(Backend):
         api_key = options.get('api_key')
         self.region = options.get('region').upper()
         self.domainname = options.get('domainname')
+        self.use_public_network = options.get('use_public_network', False)
 
         if not settings.SALT_MASTER:
             raise NameError('SALT_MASTER undefined')
@@ -98,31 +104,51 @@ class RackspaceBackend(Backend):
                        if flavor.ram == 1024][0]
 
     def bootstrap_server(self, hostname, domain_name):
-        module_dir = os.path.dirname(__file__)
-        script = os.path.join(module_dir, 'scripts/bootstrap.sh')
+        script_dir = os.path.join(os.path.dirname(__file__), 'scripts')
 
-        upload_template(script, '/root/bootstrap.sh', {
+        upload_template('bootstrap.sh', '/root/bootstrap.sh', {
             'hostname': hostname,
             'domain_name': domain_name,
+            'use_public_network': self.use_public_network,
             'master': settings.SALT_MASTER
-        }, use_jinja=True)
+        }, use_jinja=True, template_dir=script_dir)
 
         run('/bin/bash /root/bootstrap.sh')
 
     def create_host(self, host):
+        log.info('Building host %s...' % host.fqdn)
         server = self.cs.servers.create(host.fqdn, self.image.id,
                                         self.flavor.id)
         pyrax.utils.wait_for_build(server, interval=10)
 
+        log.info('Finished building host')
+
         if server.status != 'ACTIVE':
             raise Exception('failed to create host')
 
-        address = server.networks['private'][0]
-        host = 'root@%s' % address
-        env.passwords[host] = server.adminPass
-        execute(self.bootstrap_server, host.hostname, host.domain_name,
-                host=host)
+        log.info('Provisioning host %s...' % host.fqdn)
 
+        if self.use_public_network:
+            address = server.accessIPv4
+        else:
+            address = server.networks['private'][0]
+
+        env.host_string = 'root@%s' % address
+        env.password = server.adminPass
+        env.disable_known_hosts = True
+
+        script_dir = os.path.join(os.path.dirname(__file__), 'scripts')
+
+        upload_template('bootstrap.sh', '/root/bootstrap.sh', {
+            'hostname': host.hostname,
+            'domain_name': host.domain_name,
+            'use_public_network': self.use_public_network,
+            'master': settings.SALT_MASTER
+        }, use_jinja=True, template_dir=script_dir)
+
+        run('/bin/bash /root/bootstrap.sh')
+
+        log.info('Finished provisioning host')
         return address
 
     def delete_host(self, host):
@@ -192,14 +218,16 @@ class RackspaceBackend(Backend):
 
 
 def get_backend(env):
-    return backend_map.get(env.name)
+    return backend_map.get(env.system.name, {}).get(env.name)
 
 
 backend_map = {}
 
-for env_name, backends in settings.STRETCH_BACKENDS.iteritems():
-    for class_name, options in backends.iteritems():
-        # Only one backend per environment
-        backend_class = utils.get_class(class_name)
-        backend_map[env_name] = backend_class(options)
-        break
+for system_name, envs in settings.STRETCH_BACKENDS.iteritems():
+    backend_map[system_name] = {}
+    for env_name, backends in envs.iteritems():
+        for class_name, options in backends.iteritems():
+            # Only one backend per environment
+            backend_class = utils.get_class(class_name)
+            backend_map[system_name][env_name] = backend_class(options)
+            break

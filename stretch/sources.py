@@ -68,7 +68,7 @@ class GitRepositorySource(Source):
             self.ref = ref
 
             self.path = os.path.join(
-                settings.CACHE_DIR, hashlib.sha1(self.url).hexdigest())
+                settings.STRETCH_CACHE_DIR, hashlib.sha1(self.url).hexdigest())
             log.debug('Using repo directory: %s' % self.path)
 
             log.debug('Checking if cached repo exists...')

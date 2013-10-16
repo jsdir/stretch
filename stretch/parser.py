@@ -1,6 +1,7 @@
 import os
 import sys
 import yaml
+import json
 import collections
 import gnupg
 import docker
@@ -60,7 +61,7 @@ class Container(object):
         if not self.built:
             # Recursively build and push base containers
             if self.base_container:
-                self.base_container.build(release, node)
+                self.base_container.build(release, env, node)
 
             # Generate Dockerfile
             dockerdata = read_file(self.dockerfile_path)
@@ -239,21 +240,21 @@ class Snapshot(object):
         [node.container.build(release, env, node) for node in self.nodes]
 
     def build_local(self):
-        [node.container.build(None, node) for node in self.nodes]
+        [node.container.build(None, None, node) for node in self.nodes]
 
     def run_build_plugins(self, deploy, nodes=None):
         for plugin in self.plugins:
-            if nodes != None or plugin.parent in nodes:
+            if nodes and plugin.parent in nodes:
                 plugin.build(deploy)
 
     def run_pre_deploy_plugins(self, deploy, nodes=None):
         for plugin in self.plugins:
-            if nodes != None or plugin.parent in nodes:
+            if nodes and plugin.parent in nodes:
                 plugin.pre_deploy(deploy)
 
     def run_post_deploy_plugins(self, deploy, nodes=None):
         for plugin in self.plugins:
-            if nodes != None or plugin.parent in nodes:
+            if nodes and plugin.parent in nodes:
                 plugin.post_deploy(deploy)
 
     def copy_to_buffer(self, path):

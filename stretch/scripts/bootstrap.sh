@@ -12,6 +12,12 @@ FQDN=${HOSTNAME}.${DOMAINNAME}
 FQDN=${HOSTNAME}
 {% endif %}
 
+{% if not use_public_network %}
+# Disable public interface (eth0)
+ifconfig eth0 down
+sed -i '/auto eth0/s/^/#/' /etc/network/interfaces
+{% endif %}
+
 # Set the hostname
 echo ${FQDN} > /etc/hostname
 hostname ${FQDN}
