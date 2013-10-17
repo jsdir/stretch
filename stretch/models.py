@@ -13,7 +13,7 @@ from django.conf import settings
 from celery import current_task, group
 from celery.contrib.methods import task
 
-from stretch import signals, sources, utils, backends, parser
+from stretch import signals, sources, utils, backends, parser, exceptions
 from stretch.salt_api import salt_client, wheel_client, runner_client
 
 
@@ -30,7 +30,7 @@ class AuditedModel(models.Model):
         abstract = True
 
 
-class Service(models.Model):
+class Service(AuditedModel):
     name = models.TextField(validators=[alphanumeric])
     system = models.ForeignKey('System', related_name='services')
     data = jsonfield.JSONField()
@@ -60,7 +60,7 @@ class System(AuditedModel):
             if system_sources:
                 self._source = system_sources[0]
             else:
-                raise Exception('no source defined for this system')
+                raise exceptions.UndefinedSource()
         return self._source
 
 
@@ -629,4 +629,4 @@ def on_release_created(sender, **kwargs):
     release = sender
     for env in release.system.environments.all():
         if env.auto_deploy:
-            env.deploy.delay(self)
+            env.deploy.delay(release)

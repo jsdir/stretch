@@ -2,7 +2,7 @@ from mock import Mock, patch, call
 from nose.tools import eq_, raises
 import time
 
-from stretch import sources
+from stretch import sources, signals
 
 
 class TestSource(object):
@@ -29,6 +29,31 @@ class TestAutoloadableSource(object):
         source.do_watch = Mock()
         source.watch()
         assert source.do_watch.was_called
+
+
+class TestFileSystemSource(object):
+    @patch('stretch.parser.Snapshot.__new__')
+    @patch('watchdog.observers.Observer.__new__')
+    def test_source(self, observer, snapshot_new):
+        signals.sync_source.send = Mock()
+        snapshot = Mock()
+        snapshot.monitored_paths = {
+            'node1': ['foo'],
+            'node2': ['bar'],
+            'node3': ['foobar']
+        }
+
+        snapshot_new.return_value = snapshot
+
+        source = sources.FileSystemSource({'path': 'foo'})
+        source.do_watch()
+        source.on_change([
+            Mock(spec=['src_path'], src_path='foo'),
+            Mock(spec=['src_path', 'dest_path'], src_path='bar',
+                 dest_path='foobar')
+        ])
+        signals.sync_source.send.assert_called_with(sender=source,
+            snapshot=snapshot, nodes=['node1', 'node3'])
 
 
 class TestEventHandler(object):

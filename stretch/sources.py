@@ -166,7 +166,7 @@ class FileSystemSource(AutoloadableSource):
 
                 if hasattr(event, 'dest_path'):
                     path = event.dest_path
-
+                print event, paths, path
                 if any([utils.path_contains(mpath, path) for mpath in paths]):
                     autoload_nodes.append(node)
                     break
