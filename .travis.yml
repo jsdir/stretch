@@ -5,7 +5,8 @@ python:
   - "2.6"
 
 install:
-  - curl -L http://bootstrap.saltstack.org | sudo sh
+  - pip install http://dl.dropbox.com/u/174789/m2crypto-0.20.1.tar.gz
+  - pip install salt
   - pip install -q -e .
 
 script: python manage.py test
