@@ -10,7 +10,7 @@ from distutils import dir_util
 from django.conf import settings
 from StringIO import StringIO
 
-from stretch import utils, contexts
+from stretch import utils, contexts, exceptions
 from stretch.plugins import create_plugin
 
 
@@ -34,7 +34,7 @@ class Container(object):
         # Find Dockerfile
         self.dockerfile_path = os.path.join(self.path, 'Dockerfile')
         if not os.path.exists(self.dockerfile_path):
-            raise Exception('Dockerfile not found.')
+            raise exceptions.MissingFile(self.dockerfile_path)
 
         # Parse and find base containers
         container_path = os.path.join(self.path, 'container.yml')
@@ -140,11 +140,12 @@ class Node(object):
         self.build_files = get_build_files(self.path)
 
         # Find node's name if not defined
-        self.stretch_data = get_data(self.build_files['stretch'])
+        stretch_file = self.build_files['stretch']
+        self.stretch_data = get_data(stretch_file)
         if not self.name:
             self.name = self.stretch_data.get('name')
             if not self.name:
-                raise Exception('No name defined for node.')
+                raise exceptions.UndefinedParam('name', stretch_file)
 
         # Find containers
         container = self.stretch_data.get('container')
@@ -162,11 +163,10 @@ class Node(object):
 
 
 class Snapshot(object):
-    def __init__(self, path, release=None):
+    def __init__(self, path):
         self.path = path
         self.relative_path = '/'
         self.nodes = []
-        self.release = release
         self.containers = []
 
         # Begin parsing source
@@ -195,7 +195,7 @@ class Snapshot(object):
         else:
             # Individual node declaration used
             self.multiple_nodes = False
-            self.nodes.append(Node(self.path, '/', self))
+            self.nodes.append(Node(self.path, self.relative_path, self))
 
     def get_plugins(self):
         log.info('Loading plugins...')
@@ -337,7 +337,7 @@ def get_build_files(path):
     if os.path.exists(stretch_path):
         build_files['stretch'] = stretch_path
     else:
-        raise Exception('No stretch.yml exists in node path.')
+        raise exceptions.MissingFile(stretch_path)
 
     config_path = os.path.join(path, 'config.yml')
     if os.path.exists(config_path):
