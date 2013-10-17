@@ -13,6 +13,9 @@ log = logging.getLogger('stretch')
 
 
 class Backend(object):
+    def __init__(self):
+        self.autoloads = False
+
     def create_host(self, host):
         raise NotImplementedError
 
@@ -38,14 +41,10 @@ class Backend(object):
         raise NotImplementedError
 
 
-class AutoloadingBackend(Backend):
-    def __init__(self):
-        super(AutoloadingBackend, self).__init__()
-
-
-class DockerBackend(AutoloadingBackend):
+class DockerBackend(Backend):
     def __init__(self, options):
         super(DockerBackend, self).__init__()
+        self.autoloads = True
 
     def create_host(self, host):
         self.call_salt('stretch.create_host', host.fqdn)

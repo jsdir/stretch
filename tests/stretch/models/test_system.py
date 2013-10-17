@@ -17,44 +17,46 @@ class TestSystem(object):
 
     @patch('stretch.models.System.environments')
     @patch('stretch.models.System.source')
-    def test_initial_sync_source(self, source, environments):
+    @patch('stretch.models.Environment.backend')
+    def test_initial_sync_source(self, backend, source, environments):
         source.autoload = True
         env = Mock()
-        env.has_autoloading_backend.return_value = True
+        env.backend.autoloads = True
         environments.all.return_value = [env]
         system = models.System(name='system')
         system.sync_source()
         env.deploy.delay.assert_called_with(source)
 
-        env.has_autoloading_backend.return_value = False
+        env.backend.autoloads = False
         env.deploy.delay.reset_mock()
         system.sync_source()
         assert not env.deploy.delay.called
 
         source.autoload = False
-        env.has_autoloading_backend.return_value = True
+        env.backend.autoloads = True
         env.deploy.delay.reset_mock()
         system.sync_source()
         assert not env.deploy.delay.called
 
     @patch('stretch.models.System.environments')
     @patch('stretch.models.System.source')
-    def test_sync_source(self, source, environments):
+    @patch('stretch.models.Environment.backend')
+    def test_sync_source(self, backend, source, environments):
         source.autoload = True
         env = Mock()
-        env.has_autoloading_backend.return_value = True
+        env.backend.autoloads = True
         environments.all.return_value = [env]
         system = models.System(name='system')
         system.sync_source(['foo', 'bar'])
         env.autoload.delay.assert_called_with(source, ['foo', 'bar'])
 
-        env.has_autoloading_backend.return_value = False
+        env.backend.autoloads = False
         env.autoload.delay.reset_mock()
         system.sync_source(['foo', 'bar'])
         assert not env.autoload.delay.called
 
         source.autoload = False
-        env.has_autoloading_backend.return_value = True
+        env.backend.autoloads = True
         env.autoload.delay.reset_mock()
         system.sync_source(['foo', 'bar'])
         assert not env.autoload.delay.called

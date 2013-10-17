@@ -24,7 +24,9 @@ class TestSingalReceivers(object):
 
     def test_release_created_receiver(self):
         release = Mock()
-        env = Mock(auto_deploy=True)
-        release.system.environments.all.return_value = [env]
+        env1 = Mock(auto_deploy=True)
+        env2 = Mock(auto_deploy=False)
+        release.system.environments.all.return_value = [env1, env2]
         signals.release_created.send(sender=release)
-        env.deploy.delay.assert_called_with(release)
+        env1.deploy.delay.assert_called_with(release)
+        assert not env2.deploy.delay.called

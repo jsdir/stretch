@@ -3,7 +3,6 @@ import logging
 import tarfile
 import json
 import time
-from distutils import dir_util
 import jsonfield
 import uuidfield
 from django.db import models
@@ -19,12 +18,13 @@ from stretch.salt_api import salt_client, wheel_client, runner_client
 
 log = logging.getLogger('stretch')
 alphanumeric = RegexValidator(r'^[a-zA-Z0-9_\-]*$',
-    'Only alphanumeric characters, underscores, and hyphens are allowed.')
+                              'Only alphanumeric characters, underscores, and '
+                              'hyphens are allowed.')
 
 
 class AuditedModel(models.Model):
-    created_at = models.DateTimeField(auto_now_add=True)
-    updated_at = models.DateTimeField(auto_now=True)
+    created_at = models.DateTimeField(auto_now_add=True, null=True)
+    updated_at = models.DateTimeField(auto_now=True, null=True)
 
     class Meta:
         abstract = True
@@ -54,7 +54,7 @@ class System(AuditedModel):
                     env.deploy.delay(self.source)
 
             for env in self.environments.all():
-                if env.has_autoloading_backend():
+                if env.backend.autoloads:
                     callback(env)
                 else:
                     log.debug('Backend does not autoload. Skipping.')
@@ -92,14 +92,12 @@ class Environment(AuditedModel):
         total_steps = 7
 
         def update_status(current_step, description):
+            print current_task
             log.info(description)
-            current_task.update_state(state='PROGRESS',
-                meta={
-                    'description': description,
-                    'current': current_step,
-                    'total': total_steps
-                }
-            )
+            current_task.update_state(state='PROGRESS', meta={
+                                      'description': description,
+                                      'current': current_step,
+                                      'total': total_steps})
 
         existing_release = self.current_release
         deploy = Deploy.create(
@@ -108,11 +106,11 @@ class Environment(AuditedModel):
             task_id=current_task.request.id
         )
 
-        if isinstance(obj, sources.Source):
-            is_release = False
-        elif isinstance(obj, Release):
+        if hasattr(obj, 'get_snapshot'):
             is_release = True
             deploy.release = obj
+        elif hasattr(obj, 'pull'):
+            is_release = False
         else:
             raise Exception('cannot deploy object "%s"' % obj)
 
@@ -143,7 +141,8 @@ class Environment(AuditedModel):
         # Deploy to backend
         update_status(4, 'Deploying to backend...')
 
-        # Build images and save config if source deploy
+        # Build images and save config if source deploy; images are already
+        # built for releases
         if not is_release:
             snapshot.build_and_push(None, self)
             config_path = self.get_config_path()
@@ -152,10 +151,12 @@ class Environment(AuditedModel):
             # TODO: Start node piping
 
         # TODO: Mount templates, use environment subdirectory to prevent clash
-        
+
         def callback(instance):
             # TODO: share registry url, batch_size
+            instance.load_config(release_config)
             if is_release:
+                # release_config is really a template/no, are service rendered?
                 instance.deploy(obj.sha)
             else:
                 instance.deploy()
@@ -199,11 +200,10 @@ class Environment(AuditedModel):
             if instance.node.name in node_names:
                 instance.reload(remember=False)
 
-    def has_autoloading_backend(self):
-        return isinstance(self.backend, backends.AutoloadingBackend)
-
-
     def get_config_path(self):
+        """
+        Returns the path to the configuration templates used by a source.
+        """
         return os.path.join(settings.STRETCH_DATA_DIR, 'environments',
                             str(self.pk), 'config.json')
 
@@ -596,7 +596,7 @@ class Deploy(AuditedModel):
     existing_release = models.ForeignKey('Release',
         related_name='deploy_existing_releases', null=True)
     environment = models.ForeignKey('Environment', related_name='deploys')
-    task_id = models.CharField(max_length=128)
+    task_id = models.CharField(max_length=128, null=True)
 
     @classmethod
     def create(cls, *args, **kwargs):
@@ -606,7 +606,7 @@ class Deploy(AuditedModel):
         return deploy
 
     def is_from_release(self):
-        return bool(release)
+        return bool(self.release)
 
 
 @receiver(signals.sync_source)

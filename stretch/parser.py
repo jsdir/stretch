@@ -267,15 +267,15 @@ class Snapshot(object):
         If individual:
             Returns: {
                 nodes: {
-                    node.pk: config_source,
+                    node.name: config_source,
                 }
             }
         If multiple:
             Returns: {
                 global: config_source,
                 nodes: {
-                    node.pk: config_source,
-                    node.pk: config_source
+                    node.name: config_source,
+                    node.name: config_source
                 }
             }
         """
