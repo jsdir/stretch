@@ -53,7 +53,7 @@ class TestFileSystemSource(object):
                  dest_path='foobar')
         ])
         signals.sync_source.send.assert_called_with(sender=source,
-            snapshot=snapshot, nodes=['node1', 'node3'])
+                                                    nodes=['node1', 'node3'])
 
 
 class TestEventHandler(object):

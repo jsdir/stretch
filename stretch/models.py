@@ -44,11 +44,18 @@ class System(AuditedModel):
     def create_release(self, options):
         return Release.create(self.source.pull(options), system=self)
 
-    def load_sources(self):
-        if (hasattr(self.source, 'autoload') and self.source.autoload):
+    def sync_source(self, nodes=None):
+        if hasattr(self.source, 'autoload') and self.source.autoload:
+
+            def callback(env):
+                if nodes:
+                    env.autoload.delay(self.source, nodes)
+                else:
+                    env.deploy.delay(self.source)
+
             for env in self.environments.all():
                 if env.has_autoloading_backend():
-                    env.deploy.delay(self.source)
+                    callback(env)
                 else:
                     log.debug('Backend does not autoload. Skipping.')
 
@@ -603,25 +610,21 @@ class Deploy(AuditedModel):
 
 
 @receiver(signals.sync_source)
-def on_sync_source(sender, snapshot, nodes, **kwargs):
+def on_sync_source(sender, nodes, **kwargs):
     source = sender
     log.info('Source %s changed' % source)
     log.info('Changed nodes: %s' % nodes)
     system_name = sources.get_system(source)
     if system_name:
         system = System.objects.get(name=system_name)
-        for env in system.environments.all():
-            if env.has_autoloading_backend():
-                env.autoload.delay(source, nodes)
-            else:
-                log.debug('Backend does not autoload. Skipping.')
+        system.sync_source(nodes)
 
 
 @receiver(signals.load_sources)
 def on_load_sources(sender, **kwargs):
     log.info('Deploying autoloadable sources...')
     for system in System.objects.all():
-        system.load_sources()
+        system.sync_source()
 
 
 @receiver(signals.release_created)

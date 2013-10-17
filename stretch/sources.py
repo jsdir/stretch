@@ -166,14 +166,13 @@ class FileSystemSource(AutoloadableSource):
 
                 if hasattr(event, 'dest_path'):
                     path = event.dest_path
-                print event, paths, path
+
                 if any([utils.path_contains(mpath, path) for mpath in paths]):
                     autoload_nodes.append(node)
                     break
 
         if autoload_nodes:
-            signals.sync_source.send(sender=self, snapshot=snapshot,
-                                     nodes=autoload_nodes)
+            signals.sync_source.send(sender=self, nodes=autoload_nodes)
 
     def pull(self, options={}):
         return self.path
