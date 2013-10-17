@@ -1,6 +1,5 @@
 import os
 import logging
-import virtualenv
 from subprocess import call
 from django.conf import settings
 from functools import reduce
