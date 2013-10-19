@@ -9,6 +9,8 @@ import logging
 from distutils import dir_util
 from django.conf import settings
 from StringIO import StringIO
+from contextlib import contextmanager
+from subprocess import check_output
 
 from stretch import utils, contexts, exceptions
 from stretch.plugins import create_plugin
@@ -31,10 +33,21 @@ class Container(object):
             raise Exception('Encountered container reference loop.')
         ancestor_paths.append(self.path)
 
+        def expect(path):
+            if not os.path.exists(path):
+                raise exceptions.MissingFile(path)
+
         # Find Dockerfile
         self.dockerfile_path = os.path.join(self.path, 'Dockerfile')
         if not os.path.exists(self.dockerfile_path):
             raise exceptions.MissingFile(self.dockerfile_path)
+
+        # Make required directories and files
+        utils.makedirs(os.path.join(self.path, 'files'))
+        utils.makedirs(os.path.join(self.path, 'app'))
+        if not os.path.exists(os.path.join(self.path, 'files/autoload.sh')):
+            with open(os.path.join(self.path, 'files/autoload.sh'), 'w') as f:
+                f.write('exit 3')
 
         # Parse and find base containers
         container_path = os.path.join(self.path, 'container.yml')
@@ -57,24 +70,31 @@ class Container(object):
 
         return cls(path, containers, parent, ancestor_paths)
 
-    def build(self, release, env, node):
+    def build(self, release, system, node):
         if not self.built:
             # Recursively build and push base containers
             if self.base_container:
-                self.base_container.build(release, env, node)
+                self.base_container.build(release, system, node)
 
             # Generate Dockerfile
             dockerdata = read_file(self.dockerfile_path)
 
+            """ TODO: Use when docker build gets ADD caching
             added_paths = (
                 'ADD files /usr/share/stretch/files\n'
                 'ADD app /usr/share/stretch/app\n'
+                'ADD autoload.sh /usr/share/stretch/autoload.sh\n'
             )
 
             if self.base_container:
                 # Add paths at beginning
                 dockerdata = (('FROM %s\n' % self.base_container.tag) +
-                             added_paths + dockerdata)
+                             added_paths + dockerdata)"""
+            added_paths = ''
+
+            if self.base_container:
+                # Add paths at beginning
+                dockerdata = 'FROM %s\n' % self.base_container.tag + dockerdata
             else:
                 # Add paths after FROM declaration
                 lines = []
@@ -88,7 +108,7 @@ class Container(object):
                         from_found = True
 
                 if not from_found:
-                    raise Exception('No origin image defined.')
+                    raise Exception('no origin image defined')
 
                 dockerdata = '\n'.join(lines)
 
@@ -96,28 +116,32 @@ class Container(object):
             dockerdata = '\n'.join([l for l in dockerdata.split('\n')
                           if not l.strip().lower().startswith('expose')])
 
-            # Create and use generated Dockerfile
-            dockerfile = StringIO(dockerdata)
-
             # Generate tag
             if self.parent:
                 # Base container
-                self.tag = 'stretch/base/%s' % utils.generate_random_hex(16)
+                self.tag = 'stretch_base/sys%s' % system.pk
             elif release:
                 # Node container
-                self.tag = '%s/%s#%s' % (settings.REGISTRY_URL, node.name,
-                    release.sha)
+                self.tag = '%s/sys%s/%s' % (settings.STRETCH_REGISTRY_URL,
+                                            system.pk, node.name)
             else:
                 # Local container
-                self.tag = 'stretch-agent/%s/%s' % (env.pk, node.name)
+                self.tag = 'stretch_agent/sys%s/%s' % (system.pk, node.name)
 
             # Build image
             log.info('Building %s' % self.tag)
-            docker_client.build(self.path, self.tag, fileobj=dockerfile)
+            with open(os.path.join(self.path, 'Dockerfile'), 'w') as f:
+                f.write(dockerdata)
+
+            log.debug(docker_client.build(self.path, self.tag))
 
             # Push node containers to registry
             if not self.parent:
-                pass #docker_client.push(self.tag)
+                log.info('Pushing %s to registry' % self.tag)
+                # TODO: use api for push
+                log.debug(check_output(['docker', 'push', self.tag]))
+                # log.debug(docker_client.push(self.tag))
+                # TODO: .dockercfg in docs, docker login
 
             # TODO: clean up base images
             self.built = True
@@ -236,11 +260,8 @@ class Snapshot(object):
 
         return monitored_paths
 
-    def build_and_push(self, release, env=None):
-        [node.container.build(release, env, node) for node in self.nodes]
-
-    def build_local(self):
-        [node.container.build(None, None, node) for node in self.nodes]
+    def build_and_push(self, release, system):
+        [node.container.build(release, system, node) for node in self.nodes]
 
     def run_build_plugins(self, deploy, nodes=None):
         for plugin in self.plugins:
@@ -296,6 +317,7 @@ class Snapshot(object):
     def save_config(self, path):
         json.dump(self.get_config(), open(path, 'w'))
 
+    @contextmanager
     def mount_templates(self, path):
         """
         path/
@@ -312,6 +334,9 @@ class Snapshot(object):
             templates_path = os.path.join(node.container.path, 'templates')
             if os.path.exists(templates_path):
                 dir_util.copy_tree(templates_path, dest_path)
+        yield
+        utils.clear_path(path)
+
 
 
 def read_file(path):
