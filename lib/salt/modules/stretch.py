@@ -179,3 +179,10 @@ for name in ('start', 'stop', 'reload', 'restart'):
         getattr(instance, name)()
 
     setattr(current_module, name, func)
+
+
+# Until Docker 0.7 (or production-level process monitoring), this hack will
+# automatically start containers at system startup for now.
+if __name__ == '__main__':
+    for instance in db.instances.find(fields=['id']):
+        Instance(instance['id']).start()

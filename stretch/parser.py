@@ -109,7 +109,7 @@ class Container(object):
                     release.sha)
             else:
                 # Local container
-                self.tag = 'stretch/%s/%s' % (env.pk, node.name)
+                self.tag = 'stretch-agent/%s/%s' % (env.pk, node.name)
 
             # Build image
             log.info('Building %s' % self.tag)
@@ -299,23 +299,19 @@ class Snapshot(object):
     def mount_templates(self, path):
         """
         path/
-            node.pk/
+            node.name/
                 template1
                 template2
-            node.pk/
+            node.name/
                 template1
                 template2
         """
         for node in self.nodes:
-            dest_path = os.path.join(path, str(node.pk))
+            dest_path = os.path.join(path, node.name)
             utils.clear_path(dest_path)
             templates_path = os.path.join(node.container.path, 'templates')
             if os.path.exists(templates_path):
                 dir_util.copy_tree(templates_path, dest_path)
-
-    def save_config(self, file_path):
-        with open(file_path, 'w') as f:
-            f.write(json.dumps(self.get_config()))
 
 
 def read_file(path):

@@ -223,7 +223,7 @@ STRETCH_CACHE_DIR = '/var/cache/stretch'
 DOMAIN_NAME = None
 SALT_CONF_PATH = '/etc/salt'
 STRETCH_BATCH_SIZE = 5
-REGISTRY_URL = 'registry.example.net:5000'
+STRETCH_REGISTRY_URL = 'registry.example.net:5000'
 
 try:
     from .local_settings import *

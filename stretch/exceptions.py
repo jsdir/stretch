@@ -7,6 +7,13 @@ class UndefinedSource(Exception):
         return 'No source defined. Add sources for the system in settings.py'
 
 
+class UndefinedBackend(Exception):
+    """Raised if an environment tries to use a backend that does not exist."""
+    def __str__(self):
+        return 'No backend defined. Add backends for the environment in '
+               'settings.py'
+
+
 class MissingFile(Exception):
     """Raised if a Snapshot cannot find a necessary file."""
     def __init__(self, expected):

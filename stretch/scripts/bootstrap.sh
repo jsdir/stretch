@@ -30,14 +30,25 @@ echo "127.0.1.1 ${HOSTNAME} ${FQDN}" >> /etc/hosts
 service rsyslog restart
 
 # Bootstrap salt-minion
+apt-key adv --keyserver hkp://keyserver.ubuntu.com:80 --recv 7F0CEB10
+echo 'deb http://downloads-distro.mongodb.org/repo/ubuntu-upstart dist 10gen' | sudo tee /etc/apt/sources.list.d/mongodb.list
 apt-get install -y curl
 curl -L http://bootstrap.saltstack.org | sh
 
-# Make agent directory
+# Install prerequisites for stretch agent
+# TODO: use unix domain socket instead of TCP connection
+apt-get install -y ufw
+ufw deny 27017
 mkdir -p /var/lib/stretch/agent
+apt-get install -y python-pip mongodb-10gen
+pip install pymongo==2.6.3 Jinja2==2.7
+# TODO: Implement production-ready process management when Docker supports it
+echo "python /var/cache/salt/minion/extmods/modules/stretch.py" >> /etc/rc.local
 
 # Set salt-master
 echo "master: ${MASTER}" >> /etc/salt/minion
+echo "grains: {'roles': ['stretch-host']}" >> /etc/salt/minion
+# TODO: actually enforce state on stretch-host and package the state with stretch
 
 # Restart salt-minion
 service salt-minion restart
