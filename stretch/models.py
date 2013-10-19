@@ -89,10 +89,9 @@ class Environment(AuditedModel):
     def deploy(self, obj):
         log.info('Deploying %s to %s/%s' % (obj, self.system.name, self.name))
 
-        total_steps = 7
+        total_steps = 8
 
         def update_status(current_step, description):
-            print current_task
             log.info(description)
             current_task.update_state(state='PROGRESS', meta={
                                       'description': description,
@@ -123,60 +122,15 @@ class Environment(AuditedModel):
 
         if is_release:
             deploy.snapshot = obj.get_snapshot()
-            release_config = obj.get_config()
             if existing_release:
                 deploy.existing_snapshot = existing_release.get_snapshot()
         else:
             deploy.snapshot = parser.Snapshot(utils.tmp_dir(obj.pull()))
-            release_config = deploy.snapshot.get_config()
 
         snapshot = deploy.snapshot
 
-        update_status(2, 'Running build plugins')
-        snapshot.run_build_plugins(deploy)
-
-        update_status(3, 'Running pre-deploy plugins')
-        snapshot.run_pre_deploy_plugins(deploy)
-
-        # Deploy to backend
-        update_status(4, 'Deploying to backend...')
-
-        # Build images and save config if source deploy; images are already
-        # built for releases
-        if not is_release:
-            snapshot.build_and_push(None, self)
-            config_path = self.get_config_path()
-            utils.makedirs(os.path.split(config_path)[0])
-            snapshot.save_config(config_path)
-            # TODO: Start node piping
-
-        # TODO: Mount templates, use environment subdirectory to prevent clash
-
-        def callback(instance):
-            # TODO: share registry url, batch_size
-            instance.load_config(release_config)
-            if is_release:
-                # release_config is really a template/no, are service rendered?
-                instance.deploy(obj.sha)
-            else:
-                instance.deploy()
-
-        self.map_instances(callback)
-
-        # TODO: Unmount templates
-
-        update_status(5, 'Running post-deploy plugins')
-        deploy.snapshot.run_post_deploy_plugins(deploy)
-
-        # Delete temporary directories
-        update_status(6, 'Cleaning up')
-
-        utils.delete_path(snapshot.path)
-        if deploy.existing_snapshot:
-            utils.delete_path(deploy.existing_snapshot.path)
-
         # Update current release
-        update_status(7, 'Setting new release')
+        update_status(2, 'Setting new release')
 
         self.using_source = not is_release
 
@@ -185,6 +139,52 @@ class Environment(AuditedModel):
         else:
             self.current_release = None
 
+        update_status(3, 'Running build plugins')
+        snapshot.run_build_plugins(deploy)
+
+        update_status(4, 'Running pre-deploy plugins')
+        snapshot.run_pre_deploy_plugins(deploy)
+
+        # Deploy to backend
+        update_status(5, 'Deploying to backend...')
+
+        # Build images and save config if source deploy; images are already
+        # built for releases
+        if not is_release:
+            snapshot.build_and_push(None, self)
+            config_path = self.get_config_path()
+            utils.makedirs(os.path.split(config_path)[0])
+            snapshot.save_config(config_path)
+
+        # Deploy config
+        self.update_config()
+
+        template_path = os.path.join(settings.STRETCH_CACHE_DIR, 'templates',
+                                     str(self.pk))
+        with snapshot.mount_templates(template_path):
+
+            def callback(instance):
+                if is_release:
+                    instance.deploy(sha=obj.sha)
+                else:
+                    for node in snapshot.nodes:
+                        if node.name == instance.node.name and node.app_path:
+                            instance.deploy(app_path=node.app_path)
+                            break
+
+            self.map_instances(callback)
+
+        update_status(6, 'Running post-deploy plugins')
+        deploy.snapshot.run_post_deploy_plugins(deploy)
+
+        # Delete temporary directories
+        update_status(7, 'Cleaning up')
+
+        utils.delete_path(snapshot.path)
+        if deploy.existing_snapshot:
+            utils.delete_path(deploy.existing_snapshot.path)
+
+        update_status(8, 'Saving environment changes')
         self.save()
 
     @task
@@ -217,15 +217,15 @@ class Environment(AuditedModel):
         if config_data:
             # Use stub deploy
             deploy = Deploy.create(environment=self)
-            rendered_config = parser.render_config(config_data, deploy)
 
-            def callback(instance):
-                config = rendered_config.get(instance.node.name)
-                if config:
-                    instance.load_config(config)
-                instance.restart()
+            rendered_config = {}
+            for name, config in parser.render_config(config_data, deploy):
+                node_id = str(Node.objects.get(name=name).pk)
+                rendered_config[node_id] = config
 
-            self.map_instances(callback)
+            # TODO: map to hosts or improve efficiency
+            [host.load_config(rendered_config) for host in self.hosts.all()]
+
 
     def map_instances(self, callback):
         instance_count = self.instances.count()
@@ -348,7 +348,8 @@ class Instance(AuditedModel):
                                   instance=instance)
             binding.save()
 
-        instance.call('stretch.add_instance', instance_ports)
+        instance.call('stretch.add_instance', str(self.node.pk),
+                      str(self.environment.pk))
         return instance
 
     def delete(self):
@@ -367,11 +368,12 @@ class Instance(AuditedModel):
     def restart(self, **kwargs):
         self.call('stretch.restart', **kwargs)
 
-    def load_config(self, config, **kwargs):
-        self.call('stretch.load_config', config, **kwargs)
-
-    def deploy(self, sha=None, **kwargs):
-        self.call('stretch.deploy', sha, **kwargs)
+    def deploy(self, sha=None, app_path=None, **kwargs):
+        env = {'id': str(self.environment.pk), 'name': self.environment.name}
+        node = {'id': str(self.node.pk), 'name': self.node.name}
+        self.call('stretch.deploy', [env, node, self.node.ports,
+                                     settings.STRETCH_REGISTRY_URL, sha,
+                                     app_path], **kwargs)
 
     def activate(self):
         if self.host.group:
@@ -382,9 +384,7 @@ class Instance(AuditedModel):
             self.host.group.deactivate(self.host)
 
     def call(self, *args, **kwargs):
-        kwargs['instance_id'] = str(self.pk)
-        kwargs['node_id'] = str(self.node.pk)
-
+        args = [str(self.pk)] + args
         jid = salt_client().cmd_async(self.host.fqdn, *args, **kwargs)
 
         if kwargs.pop('remember', True):
@@ -459,7 +459,7 @@ class Host(AuditedModel):
 
         if group:
             if not env.backend:
-                raise Exception('no backend defined') # TODO: common specific exceptions
+                raise exceptions.UndefinedBackend()
             host.address = env.backend.create_host(host)
 
         host.finish_provisioning()
@@ -475,7 +475,7 @@ class Host(AuditedModel):
         self.delete_key()
         if self.group:
             if not self.environment.backend:
-                raise Exception('no backend defined') # TODO: common specific exceptions
+                raise exceptions.UndefinedBackend()
             self.environment.backend.delete_host(self)
         super(Host, self).delete()
 
@@ -505,12 +505,15 @@ class Host(AuditedModel):
     def sync(self):
         # Install dependencies
         log.info('Installing dependencies...')
-        self.call_salt('state.highstate')
+        self.call('state.highstate')
         # Synchronize modules
         log.info('Synchronizing modules...')
-        self.call_salt('saltutil.sync_all')
+        self.call('saltutil.sync_all')
 
-    def call_salt(self, *args, **kwargs):
+    def load_config(self, node_configs):
+        self.call('load_config', str(self.environment.pk), node_configs)
+
+    def call(self, *args, **kwargs):
         salt_client().cmd(self.fqdn, *args, **kwargs)
 
 
