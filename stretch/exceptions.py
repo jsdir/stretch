@@ -10,8 +10,8 @@ class UndefinedSource(Exception):
 class UndefinedBackend(Exception):
     """Raised if an environment tries to use a backend that does not exist."""
     def __str__(self):
-        return 'No backend defined. Add backends for the environment in '
-               'settings.py'
+        return ('No backend defined. Add backends for the environment in '
+                'settings.py')
 
 
 class MissingFile(Exception):
