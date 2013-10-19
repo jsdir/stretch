@@ -1,116 +1,154 @@
 import os
 import errno
 import docker
-from subprocess import call
+import pymongo
+import shutil
+import tempfile
+import contextlib
+import jinja2
+from subprocess import call, check_output
 
-# On startup
-# Go through instance database and run
 
 docker_client = docker.Client(base_url='unix://var/run/docker.sock',
                               version='1.4')
+mongo_client = pymongo.MongoClient()
+db = mongo_client['stretch-agent']
 agent_dir = '/var/lib/stretch/agent'
-
-
-class Container(object):
-    def __init__(self, instance_id):
-        pass
-
-    def restart(self):
-        pass
+container_dir = '/usr/share/stretch'
 
 
 class Instance(object):
     def __init__(self, instance_id):
         self.id = instance_id
+        self.data = {}
+        self.load()
+
+    def load(self):
+        # Attempt to load instance attributes from redis
+        data = db.instances.find_one({'id': self.id})
+        if data:
+            self.data = data
+
+    def save(self):
+        db.instances.update({'id': self.id}, {'$set': self.data}, upsert=True)
+
+    def remove(self):
+        self.stop()
+        db.instances.remove({'id': self.id})
+
+    def start(self):
+        env_id, node_id = self.data['env_id'], self.data['node_id']
+        node_path = os.path.join(agent_dir, env_id, node_id)
+        config_path = os.path.join(node_path, 'config.json')
+        makedirs(os.path.join(node_path, 'templates'))
+        if not os.path.exists(config_path):
+            with open(config_path) as f:
+                f.write('{}')
+
+        node_data = db.nodes.find_one({'env_id': env_id, 'node_id':node_id})
+
+        mounts = ['-v', '%s:%s:ro' % (node_path, container_dir)]
+        if node_data['app_path']:
+            mounts += ['-v', '%s:%s:ro' % (node_data['app_path'],
+                                           os.path.join(container_dir, 'app'))]
+        ports = []
+        for port in node_data['ports']:
+            ports += ['p', '%s:%s' % (port, port)]
+
+        # TODO: Use API when it can implement port mapping and read-only mounts
+        self.data['cid'] = check_output((['docker', 'run', '-d'] + mounts +
+                                         ports + [node_data['image']])).strip()
+        self.save()
+
+    def stop(self):
+        docker_client.stop(self.data['cid'])
 
     def restart(self):
-        pass
+        self.stop()
+        self.start()
+
+    def reload(self):
+        code = call(['lxc-attach', '-n', self.cid, '--', '/bin/bash',
+                     os.path.join(container_dir, 'autoload.sh')])
+        if code != 0:
+            # No user-defined autoload.sh or script wants to reload; restart.
+            self.restart()
 
 
-def add_instance(instance_id, node_id, ports):
-    # ports = [(80, 80), (443, 443)]
-    # Add instance to global instance table
-    # Initialize instance
-    pass
+def instance(func):
+
+    def method(instance_id, *args, **kwargs):
+        func(Instance(instance_id), *args, **kwargs)
+
+    return method
 
 
-def remove_instance(instance_id):
-    # Stop instance
-    # Remove <Instance> to global instance table
-    pass
+def load_config(env_id, node_configs):
+    env_dir = os.path.join(agent_dir, env_id)
+    for node_id, config in node_configs.iteritems():
+        with open(os.path.join(env_dir, node_id, 'config.json'), 'w') as f:
+            f.write(config)
 
 
-def reload():
-    pass
+@instance
+def add_instance(instance, node_id, env_id):
+    instance.data = {'node_id': node_id, 'env_id': env_id}
+    instance.start()
 
 
-def restart():
-    pass
+@instance
+def remove_instance(instance):
+    instance.remove()
 
 
-def load_config(config, instance_id):
-    # Relate config with instance_id
-    pass
+@contextlib.contextmanager
+def make_temp_dir():
+    temp_dir = tempfile.mkdtemp()
+    yield temp_dir
+    shutil.rmtree(temp_dir)
 
 
-def deploy(sha, instance_id):
+@instance
+def deploy(instance, env, node, ports, registry_url, sha=None, app_path=None):
+    # TODO: make ports multidimensional
+    if not sha and not app_path:
+        raise Exception('either release sha or app path must be specified')
+
+    # Pull image
     if sha:
-        # TODO: deploy with release sha
+        image = '%s/%s/%s#%s' % (registry_url, env['id'], node['name'], sha)
     else:
-        # TODO: Deploy with local image with self.node.pk/name
-    # images with sha need to be pulled, first pull sets a lock,
-    # subsequent pulls wait for lock and use the newly-pulled images
+        image = '%s/stretch-agent/%s/%s' % (registry_url, env['id'],
+                                            node['name'])
+    docker.pull(image)
 
+    data = {'image': image, 'app_path': app_path, 'ports': ports}
+    query = {'env_id': env['id'], 'node_id': node['id']}
+    db.nodes.update(query, {'$set': data}, upsert=True)
 
-def pull(options):
-    release_sha = options.get('release_sha')
-    release_name = options.get('release_name')
-    registry_url = options.get('registry_url')
-    config = release.get('config')
+    instance.stop()
 
-    # (along with templates from the fileserver)
-    # Pull to template directory
-    path = os.path.join('salt://templates', templates_path)
-    __salt__['cp.get_dir'](path, dest)
+    # Load and compile templates
+    context = {'environment': env['name']}
 
-    # Pull release image for every node under the agent/system
+    src = os.path.join('salt://templates', env['id'], node['id'])
+    dest = os.path.join(agent_dir, env['id'], node['id'], 'templates')
+    clear_path(dest)
 
-    for node in _collected_nodes():
-        image = '%s/%s/%s:%s' % (registry_url, system_id, node_type,
-                                 release_sha)
-        docker_client.pull(image)
+    with make_temp_dir() as temp_dir:
+        __salt__['cp.get_dir'](src, temp_dir)
+        for dirpath, dirnames, filenames in os.walk(temp_dir):
+            rel_dir = os.path.relpath(dirpath, temp_dir)
+            dest_dir = os.path.join(dest, rel_dir)
+            loader = jinja2.loaders.FileSystemLoader(dirpath)
+            env = jinja2.Environment(loader=loader)
+            for filename in filenames:
+                dest_file = os.path.splitext(filename)[0]
+                data = env.get_template(filename).render(context)
+                with open(os.path.join(dest_dir, dest_file), 'w') as f:
+                    f.write(data)
 
-        # Save image_path to cache file or state
-
-
-def deploy(instance_id, release_sha, environment_id, environment_name):
-    container = Container(instance) # get instance_id
-    # docker stop container.id
-    # docker run tag -ports -mount rendered templates
-
-
-def autoload_deploy(options):
-    # This is a deploy without the release
-    config = options.config
-    environment = options.environment
-
-    for instance.environment == environment:
-        # apply templates
-
-
-
-def autoload(instance_id, app_path):
-    # Check for user-defined autoload.sh
-    # TODO: In a newer release, docker will have functionality to run
-    #       a command inside a running container. This will remove
-    #       dependency of lxc-attach.
-    container = Container(instance_id)
-    autoload_file = '/usr/share/stretch/autoload.sh'
-    code = call(['lxc-attach', '-n', container.id, '--', '/bin/bash',
-                 autoload_file])
-    if code == 3:
-        # No user-defined autoload.sh, restart container
-        container.restart()
+    instance.start()
 
 
 def makedirs(path):
@@ -121,3 +159,23 @@ def makedirs(path):
             pass
         else:
             raise
+
+
+def delete_path(path):
+    if os.path.exists(path):
+        shutil.rmtree(path)
+
+
+def clear_path(path):
+    delete_path(path)
+    makedirs(path)
+
+
+current_module = __import__(__name__)
+for name in ('start', 'stop', 'reload', 'restart'):
+
+    @instance
+    def func(instance):
+        getattr(instance, name)()
+
+    setattr(current_module, name, func)
