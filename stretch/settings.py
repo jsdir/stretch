@@ -220,6 +220,7 @@ STRETCH_LOCK_DIR = '/var/lock/stretch'
 STRETCH_TEMP_DIR = '/tmp/stretch'
 STRETCH_DATA_DIR = '/var/lib/stretch'
 STRETCH_CACHE_DIR = '/var/cache/stretch'
+STRETCH_BACKEND_IMAGE_PREFIX = 'stretch-host-image'
 DOMAIN_NAME = None
 SALT_CONF_PATH = '/etc/salt'
 STRETCH_BATCH_SIZE = 5
