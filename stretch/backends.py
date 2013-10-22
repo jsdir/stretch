@@ -1,12 +1,13 @@
 import os
 import pyrax
 import logging
-from fabric.api import run, env, put
+from fabric.api import run, env, put, cd
 from fabric.contrib.files import upload_template
 from django.conf import settings
 
+import stretch
 from stretch.salt_api import caller_client
-from stretch import utils, __version__
+from stretch import utils
 
 
 log = logging.getLogger('stretch')
@@ -14,6 +15,7 @@ log = logging.getLogger('stretch')
 
 class Backend(object):
     def __init__(self, options):
+        self.options = options
         self.autoloads = False
         self.store_images = options.get('store_images', True)
         # TODO: add in docs that delete_unused_images only happens when
@@ -43,6 +45,13 @@ class Backend(object):
 
     def delete_lb(self, lb):
         raise NotImplementedError
+
+    def require_option(self, name):
+        value = self.options.get(name)
+        if not value:
+            raise Exception('option "%s" does not exist in backend settings'
+                            % name)
+        return value
 
 
 class DockerBackend(Backend):
@@ -85,66 +94,38 @@ class RackspaceBackend(Backend):
     def __init__(self, options):
         super(RackspaceBackend, self).__init__(options)
 
-        self.username = options.get('username')
-        api_key = options.get('api_key')
-        self.region = options.get('region').upper()
-        self.domainname = options.get('domainname')
+        self.username = self.require_option('username')
+        api_key = self.require_option('api_key')
+        self.region = options.get('region', 'DFW').upper()
+        self.domainname = self.require_option('domainname')
         self.use_public_network = options.get('use_public_network', False)
         self.image_name = options.get('image', 'Ubuntu 13.04')
         self.flavor_ram = options.get('ram', 1024)
-
-        if not settings.SALT_MASTER:
-            raise NameError('SALT_MASTER undefined')
 
         pyrax.set_setting('identity_type', 'rackspace')
         pyrax.set_credentials(self.username, api_key)
         self.cs = pyrax.connect_to_cloudservers(region=self.region)
         self.clb = pyrax.connect_to_cloud_loadbalancers(region=self.region)
 
-        self.image = [img for img in self.cs.images.list()
-                      if self.image_name in img.name][0]
+        try:
+            self.image = [img for img in self.cs.images.list()
+                          if self.image_name in img.name][0]
+        except IndexError:
+            raise self.ImageNotFound('image "%s" not found' % self.image_name)
 
-        self.flavor = [flavor for flavor in self.cs.flavors.list()
-                       if self.flavor_ram == 1024][0]
-
-    def bootstrap_server(self, hostname, domain_name):
-        script_dir = os.path.join(os.path.dirname(__file__), 'scripts')
-
-        upload_template('bootstrap.sh', '/root/bootstrap.sh', {
-            'hostname': hostname,
-            'domain_name': domain_name,
-            'use_public_network': self.use_public_network,
-            'master': settings.SALT_MASTER
-        }, use_jinja=True, template_dir=script_dir)
-
-        run('/bin/bash /root/bootstrap.sh')
+        try:
+            self.flavor = [flavor for flavor in self.cs.flavors.list()
+                           if flavor.ram == self.flavor_ram][0]
+        except IndexError:
+            raise self.FlavorNotFound('flavor with ram "%s" not found'
+                                      % self.flavor_ram)
 
     def create_host(self, host):
         log.info('Creating host %s...' % host.fqdn)
 
         image_name, prefix = get_image_name()
-        image_id = self.image.id
-        new_image = False
-
-        if self.store_images:
-            image_name, prefix = get_image_name()
-            images = [i for i in self.cs.images.list() if i.name == image_name]
-            if images:
-                image = image[0]
-                pyrax.wait_until(image, 'status', ['ACTIVE', 'ERROR'],
-                                 attempts=0)
-                if image.status != 'ACTIVE':
-                    raise Exception('failed to create image')
-                image_id = image.id
-            else:
-                # Create new image
-                new_image = True
-                if self.delete_unused_images:
-                    # Delete unused images
-                    for image in self.cs.images.list():
-                        if (image.name != image_name and
-                                image.name.startswith(prefix)):
-                            image.delete()
+        create_image, im_id = self.should_create_image(image_name, prefix)
+        image_id = im_id or self.image.id
 
         server = self.cs.servers.create(host.fqdn, image_id, self.flavor.id)
         pyrax.utils.wait_for_build(server, interval=10)
@@ -157,21 +138,57 @@ class RackspaceBackend(Backend):
         else:
             address = server.networks['private'][0]
 
+        self.provision_host(server, address, host, create_image, image_name,
+                            prefix)
+        log.info('Finished configuring host')
+        return address
+
+    def should_create_image(self, image_name, prefix):
+        create_image = False
+        image_id = None
+
+        if self.store_images:
+            images = [i for i in self.cs.images.list() if i.name == image_name]
+            if images:
+                image = images[0]
+                log.info('Using image: %s' % image.name)
+                pyrax.utils.wait_until(image, 'status', ['ACTIVE', 'ERROR'],
+                                       attempts=0)
+                image_id = image.id
+            else:
+                # Create new image
+                create_image = True
+                if self.delete_unused_images:
+                    # Delete unused images
+                    for image in self.cs.images.list():
+                        if (image.name != image_name and
+                                image.name.startswith(prefix)):
+                            image.delete()
+
+        return create_image, image_id
+
+    def provision_host(self, server, address, host, create_image, image_name,
+                       prefix):
         env.host_string = 'root@%s' % address
         env.password = server.adminPass
         env.disable_known_hosts = True
 
         script_dir = os.path.join(os.path.dirname(__file__), 'scripts')
 
-        if new_image:
+        if create_image:
             # Create image
             log.info('Provisioning host %s...' % host.fqdn)
             with cd('/root'):
                 file_name = 'image-bootstrap.sh'
                 put(os.path.join(script_dir, file_name), file_name)
-                run('/bin/bash %s', file_name)
+                run('/bin/bash %s' % file_name)
             log.info('Creating image (%s) from host...' % image_name)
-            server.create_image(image_name)
+            image_id = server.create_image(image_name)
+            image = self.cs.images.get(image_id)
+            pyrax.utils.wait_until(image, 'status', ['ACTIVE', 'ERROR'],
+                                   attempts=0)
+            if image.status != 'ACTIVE':
+                raise Exception('failed to create image')
 
         log.info('Configuring host %s...' % host.fqdn)
 
@@ -182,10 +199,6 @@ class RackspaceBackend(Backend):
             'master': settings.SALT_MASTER
         }, use_jinja=True, template_dir=script_dir)
         run('/bin/bash /root/host-bootstrap.sh')
-
-        log.info('Finished configuring host')
-
-        return address
 
     def delete_host(self, host):
         for server in self.cs.list():
@@ -252,10 +265,16 @@ class RackspaceBackend(Backend):
             condition='ENABLED'
         )
 
+    class FlavorNotFound(Exception):
+        pass
+
+    class ImageNotFound(Exception):
+        pass
+
 
 def get_image_name():
     prefix = settings.STRETCH_BACKEND_IMAGE_PREFIX
-    return '%s-%s' % (prefix, __version__), prefix
+    return '%s-%s' % (prefix, stretch.__version__), prefix
 
 
 def get_backend(env):

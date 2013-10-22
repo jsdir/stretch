@@ -1,6 +1,8 @@
-from mock import Mock, patch
-from nose.tools import eq_
+from mock import Mock, patch, DEFAULT, call
+from nose.tools import eq_, assert_raises
+from unittest import TestCase
 
+import stretch
 from stretch import backends
 
 
@@ -46,3 +48,133 @@ class TestBackendMap(object):
         backend = backend_map['system']['env']
         assert isinstance(backend, TestBackend)
         eq_(backend.options, {'foo': 'bar'})
+
+
+class TestRackspaceBackend(TestCase):
+    def setUp(self):
+        patcher = patch('stretch.backends.pyrax')
+        self.addCleanup(patcher.stop)
+        self.pyrax = patcher.start()
+
+        self.cs = Mock()
+        self.cs.images.list.return_value = [create_mock(name='image')]
+        self.cs.flavors.list.return_value = [create_mock(ram=512)]
+        self.pyrax.connect_to_cloudservers.return_value = self.cs
+
+        self.backend = backends.RackspaceBackend({
+            'username': 'barfoo',
+            'api_key': '------',
+            'region': 'dfw',
+            'domainname': 'example.com',
+            'image': 'image',
+            'ram': 512
+        })
+
+    def test_init(self):
+        self.cs.images.list.return_value = [create_mock(name='image22')]
+
+        options = {
+            'username': 'barfoo',
+            'api_key': '------',
+            'region': 'dfw',
+            'domainname': 'example.com',
+            'image': 'foo',
+            'ram': 1
+        }
+
+        with assert_raises(backends.RackspaceBackend.ImageNotFound):
+            backend = backends.RackspaceBackend(options)
+
+        options['image'] = 'mage2'
+        with assert_raises(backends.RackspaceBackend.FlavorNotFound):
+            backend = backends.RackspaceBackend(options)
+
+        options['ram'] = 512
+        backends.RackspaceBackend(options)
+
+        pyrax = self.pyrax
+        pyrax.connect_to_cloudservers.assert_called_with(region='DFW')
+        pyrax.connect_to_cloud_loadbalancers.assert_called_with(region='DFW')
+        pyrax.set_credentials.assert_called_with('barfoo', '------')
+
+    def test_should_create_image(self):
+        backend = self.backend
+
+        backend.store_images = False
+        eq_(backend.should_create_image('prefix-name', 'prefix'), (False, None))
+
+        backend.store_images = True
+        eq_(backend.should_create_image('prefix-name', 'prefix'), (True, None))
+
+        image = create_mock(name='prefix-name', id='id')
+        self.cs.images.list.return_value = [image]
+        eq_(backend.should_create_image('prefix-name', 'prefix'), (False, 'id'))
+
+        im1 = create_mock(name='prefix-foo')
+        im2 = create_mock(name='otherprefix-foo')
+        self.cs.images.list.return_value = [im1, im2]
+        backend.store_images = False
+        backend.should_create_image('prefix-name', 'prefix')
+
+        assert not im1.delete.called
+        assert not im2.delete.called
+
+        backend.store_images = True
+        backend.should_create_image('prefix-name', 'prefix')
+
+        im1.delete.assert_called_with()
+        assert not im2.delete.called
+
+    @patch('stretch.backends.get_image_name', return_value=('p-name', 'p'))
+    @patch('stretch.backends.RackspaceBackend.should_create_image')
+    @patch('stretch.backends.RackspaceBackend.provision_host')
+    def test_create_host(self, provision_host, should_create_image, get_name):
+        server = create_mock(status='ACTIVE', accessIPv4='publicip',
+                             networks={'private':['privateip']})
+        self.cs.servers.create.return_value = server
+        host = Mock()
+
+        should_create_image.return_value = (True, 'id')
+        self.backend.use_public_network = True
+        self.backend.create_host(host)
+        provision_host.assert_called_with(server, 'publicip', host, True,
+                                          'p-name', 'p')
+
+        should_create_image.return_value = (False, None)
+        self.backend.use_public_network = False
+        self.backend.create_host(host)
+        provision_host.assert_called_with(server, 'privateip', host, False,
+                                          'p-name', 'p')
+
+    @patch.multiple('stretch.backends', put=DEFAULT, run=DEFAULT,
+                    upload_template=DEFAULT, env=DEFAULT)
+    def test_provision_host(self, put, run, upload_template, env):
+        s = Mock()
+        s.adminPass = 'password'
+        s.create_image.return_value = 'imageid'
+        host = Mock()
+        self.cs.images.get.return_value = create_mock(status='ACTIVE')
+
+        self.backend.provision_host(s, '0.0.0.0', host, True, 'p-name', 'p')
+        eq_(env.host_string, 'root@0.0.0.0')
+        eq_(env.password, 'password')
+        run.assert_has_calls([call('/bin/bash image-bootstrap.sh'),
+        call('/bin/bash /root/host-bootstrap.sh')])
+        run.reset()
+
+        self.backend.provision_host(s, '0.0.0.0', host, False, 'p-name', 'p')
+        run.assert_called_with('/bin/bash /root/host-bootstrap.sh')
+
+
+class TestBackend(object):
+    @patch('stretch.__version__', '0.2')
+    @patch('django.conf.settings.STRETCH_BACKEND_IMAGE_PREFIX', 'prefix')
+    def test_get_image_name(self):
+        eq_(backends.get_image_name(), ('prefix-0.2', 'prefix'))
+
+
+def create_mock(**kwargs):
+    mock = Mock()
+    for key, value in kwargs.iteritems():
+        setattr(mock, key, value)
+    return mock
