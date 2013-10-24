@@ -12,11 +12,11 @@ before_install:
 
 install:
   - pip install -q -e .
-  - pip install -q python-coveralls rednose
+  - pip install -q coveralls rednose
 
 script:
-  - python manage.py test --rednose --with-coverage --cover-package=stretch
-  - coverage run --source=stretch --omit=*/migrations/*.py $(which django-admin.py) test
+  - coverage run manage.py test --rednose
+  - coverage report
 
 after_success:
   - coveralls
