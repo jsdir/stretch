@@ -1,8 +1,6 @@
 from mock import Mock, patch
-from nose.tools import eq_, raises
-from django.core.exceptions import ValidationError
 
-from stretch import models, signals
+from stretch import signals
 
 
 class TestSingalReceivers(object):

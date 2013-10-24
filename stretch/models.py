@@ -84,6 +84,12 @@ class Environment(AuditedModel):
             self._backend = backends.get_backend(self)
         return self._backend
 
+    @property
+    def config_manager(self):
+        if not hasattr(self, '_config_manager'):
+            self._config_manager = config_managers.EtcdConfigManager()
+        return self._config_manager
+
     # TODO: make tasks non-concurrent
     @task
     def deploy(self, obj):

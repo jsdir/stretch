@@ -1,7 +1,7 @@
-from mock import Mock, patch
-from nose.tools import eq_, raises
+from mock import patch
+from nose.tools import eq_
 
-from stretch import models, exceptions
+from stretch import models
 
 
 class TestEnvironment(object):
@@ -24,7 +24,7 @@ class TestEnvironment(object):
 
     def test_autoload(self):
         pass
-        
+
         env = models.Environment(name='env')
         env.update_config()
         # assert all instances updates
@@ -49,7 +49,7 @@ class TestEnvironment(object):
 
     def test_deploy_source(self):
         pass
-        
+
         env = models.Environment(name='env')
         env.using_source = False
         env.current_release = Mock()
@@ -57,7 +57,7 @@ class TestEnvironment(object):
         env.deploy(source)
         assert env.using_source
         eq_(env.current_release, None)
-        
+
 
     def test_map_instances(self):
         pass # plenty of assertions """

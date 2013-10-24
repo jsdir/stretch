@@ -2,7 +2,6 @@ from mock import Mock, patch, DEFAULT, call
 from nose.tools import eq_, assert_raises
 from unittest import TestCase
 
-import stretch
 from stretch import backends
 
 
@@ -83,11 +82,11 @@ class TestRackspaceBackend(TestCase):
         }
 
         with assert_raises(backends.RackspaceBackend.ImageNotFound):
-            backend = backends.RackspaceBackend(options)
+            backends.RackspaceBackend(options)
 
         options['image'] = 'mage2'
         with assert_raises(backends.RackspaceBackend.FlavorNotFound):
-            backend = backends.RackspaceBackend(options)
+            backends.RackspaceBackend(options)
 
         options['ram'] = 512
         backends.RackspaceBackend(options)
@@ -101,14 +100,16 @@ class TestRackspaceBackend(TestCase):
         backend = self.backend
 
         backend.store_images = False
-        eq_(backend.should_create_image('prefix-name', 'prefix'), (False, None))
+        eq_(backend.should_create_image('prefix-name', 'prefix'),
+            (False, None))
 
         backend.store_images = True
         eq_(backend.should_create_image('prefix-name', 'prefix'), (True, None))
 
         image = create_mock(name='prefix-name', id='id')
         self.cs.images.list.return_value = [image]
-        eq_(backend.should_create_image('prefix-name', 'prefix'), (False, 'id'))
+        eq_(backend.should_create_image('prefix-name', 'prefix'),
+            (False, 'id'))
 
         im1 = create_mock(name='prefix-foo')
         im2 = create_mock(name='otherprefix-foo')
@@ -130,7 +131,7 @@ class TestRackspaceBackend(TestCase):
     @patch('stretch.backends.RackspaceBackend.provision_host')
     def test_create_host(self, provision_host, should_create_image, get_name):
         server = create_mock(status='ACTIVE', accessIPv4='publicip',
-                             networks={'private':['privateip']})
+                             networks={'private': ['privateip']})
         self.cs.servers.create.return_value = server
         host = Mock()
 
@@ -159,7 +160,7 @@ class TestRackspaceBackend(TestCase):
         eq_(env.host_string, 'root@0.0.0.0')
         eq_(env.password, 'password')
         run.assert_has_calls([call('/bin/bash image-bootstrap.sh'),
-        call('/bin/bash /root/host-bootstrap.sh')])
+                              call('/bin/bash /root/host-bootstrap.sh')])
         run.reset()
 
         self.backend.provision_host(s, '0.0.0.0', host, False, 'p-name', 'p')
