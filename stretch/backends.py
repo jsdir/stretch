@@ -158,11 +158,15 @@ class RackspaceBackend(Backend):
             else:
                 # Create new image
                 create_image = True
+                log.info('a new image (%s) will be created from this build'
+                         % image_name)
                 if self.delete_unused_images:
                     # Delete unused images
+                    log.info('Deleting unused images...')
                     for image in self.cs.images.list():
                         if (image.name != image_name and
                                 image.name.startswith(prefix)):
+                            log.info('Deleting image %s...' % image.name)
                             image.delete()
 
         return create_image, image_id
