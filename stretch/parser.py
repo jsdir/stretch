@@ -10,7 +10,6 @@ from distutils import dir_util
 from django.conf import settings
 from StringIO import StringIO
 from contextlib import contextmanager
-from subprocess import check_output
 
 from stretch import utils, contexts, exceptions
 from stretch.plugins import create_plugin
@@ -139,7 +138,7 @@ class Container(object):
             if not self.parent:
                 log.info('Pushing %s to registry' % self.tag)
                 # TODO: use api for push
-                log.debug(check_output(['docker', 'push', self.tag]))
+                log.debug(utils.check_output(['docker', 'push', self.tag]))
                 # log.debug(docker_client.push(self.tag))
                 # TODO: .dockercfg in docs, docker login
 

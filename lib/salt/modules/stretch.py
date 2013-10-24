@@ -74,6 +74,7 @@ class Instance(object):
             ports += ['-p', '%s:%s' % (port, port)]
 
         # TODO: Use API when it can implement port mapping and read-only mounts
+        # TODO: Use alternative of check_output for python 2.6
         self.data['cid'] = check_output((['docker', 'run', '-d'] + mounts +
                                          ports + [node_data['image']])).strip()
         log.info('Starting cid: %s' % self.data['cid'])

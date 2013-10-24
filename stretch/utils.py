@@ -7,6 +7,7 @@ import shutil
 import random
 import jinja2
 import collections
+import subprocess
 import tempfile
 import cPickle
 from distutils import dir_util
@@ -94,6 +95,20 @@ def delete_path(path):
 def clear_path(path):
     delete_path(path)
     makedirs(path)
+
+
+def check_output(*args, **kwargs):
+    process = subprocess.Popen(stdout=subprocess.PIPE, *args, **kwargs)
+    output, unused_err = process.communicate()
+    retcode = process.poll()
+    if retcode:
+        cmd = kwargs.get("args")
+        if cmd is None:
+            cmd = args[0]
+        error = subprocess.CalledProcessError(retcode, cmd)
+        error.output = output
+        raise error
+    return output
 
 
 def tmp_dir(path=None):
