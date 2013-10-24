@@ -1,6 +1,6 @@
 from mock import Mock, patch, DEFAULT, call
 from nose.tools import eq_, assert_raises
-from unittest import TestCase
+from testtools import TestCase
 
 from stretch import backends
 
@@ -51,6 +51,8 @@ class TestBackendMap(object):
 
 class TestRackspaceBackend(TestCase):
     def setUp(self):
+        super(TestRackspaceBackend, self).setUp()
+
         patcher = patch('stretch.backends.pyrax')
         self.addCleanup(patcher.stop)
         self.pyrax = patcher.start()
