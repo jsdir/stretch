@@ -14,7 +14,7 @@ install:
   - pip install -q -e .
   - pip install -q python-coveralls rednose
 
-script: python manage.py test --rednose
+script: python manage.py test --rednose --with-coverage --cover-package=stretch
 
 after_success:
   - coveralls
