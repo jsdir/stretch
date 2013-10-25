@@ -61,7 +61,7 @@ class GitRepositorySource(Source):
         self.url = self.require_option('url')
         self.ref = None
 
-    def pull(self, options={}):  # pragma: no cover
+    def pull(self, options={}):
         ref = options.get('ref')
 
         if not self.ref or self.ref != ref:

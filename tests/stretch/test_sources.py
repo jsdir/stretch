@@ -54,20 +54,56 @@ class TestFileSystemSource(object):
         ])
         signals.sync_source.send.assert_called_with(sender=source,
                                                     nodes=['node1', 'node3'])
+        signals.sync_source.send.reset_mock()
+
+        snapshot.monitored_paths = {}
+        source.on_change([
+            Mock(spec=['src_path'], src_path='foo'),
+            Mock(spec=['src_path', 'dest_path'], src_path='bar',
+                 dest_path='foobar')
+        ])
+        assert not signals.sync_source.send.called
+
+
+class TestGitRepositorySource(object):
+    @patch('django.conf.settings.STRETCH_CACHE_DIR', '/cache')
+    @patch('stretch.utils.makedirs', Mock())
+    @patch('stretch.sources.git')
+    def test_pull(self, git):
+        source = sources.GitRepositorySource({'url': 'repo_url'})
+        path = '/cache/046e9fb39a04020f6cabc0a83e01ad3c108a6225'
+
+        with patch('os.path.exists', return_value=False):
+            # assert latest commit pulled
+            eq_(source.pull(), path)
+            git.Repo.clone_from.assert_called_with('repo_url', path)
+
+        git.reset_mock()
+        with patch('os.path.exists', return_value=True):
+            eq_(source.pull(), path)
+            git.Repo.assert_called_with(path)
+
+        eq_(source.pull({'ref': 'a'}), path)
+        git.reset_mock()
+        eq_(source.pull({'ref': 'a'}), path)
+        # assert repo 'a' cached
+        assert not git.Repo.called
+        assert not git.Repo.clone_from.called
+
 
 
 class TestEventHandler(object):
     def test_event_handler(self):
         callback = Mock()
         handler = sources.EventHandler(callback)
-        handler.timeout = 0.1
+        handler.timeout = 0.02
 
         handler.on_any_event(1)
-        time.sleep(0.05)
+        time.sleep(0.01)
         handler.on_any_event(2)
-        time.sleep(0.15)
+        time.sleep(0.03)
         handler.on_any_event(1)
-        time.sleep(0.15)
+        time.sleep(0.03)
 
         eq_(callback.mock_calls, [call([1, 2]), call([1])])
 
@@ -91,8 +127,8 @@ class TestSourceMap(object):
 
     @patch('stretch.sources.get_source_map')
     def test_watch(self, get_source_map):
-        source = Mock()
-        autoloadable_source = Mock()
+        source = Mock(spec=[])
+        autoloadable_source = Mock(spec=['watch'])
         get_source_map.return_value = {'system': [source, autoloadable_source]}
         sources.watch()
         autoloadable_source.watch.assert_called_with()

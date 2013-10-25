@@ -30,13 +30,6 @@ class AuditedModel(models.Model):
         abstract = True
 
 
-class Service(AuditedModel):
-    name = models.TextField(validators=[alphanumeric])
-    system = models.ForeignKey('System', related_name='services')
-    data = jsonfield.JSONField(default={})
-    unique_together = ('system', 'name')
-
-
 class System(AuditedModel):
     name = models.TextField(unique=True, validators=[alphanumeric])
     domain_name = models.TextField(unique=True, null=True)
@@ -83,12 +76,6 @@ class Environment(AuditedModel):
         if not hasattr(self, '_backend'):
             self._backend = backends.get_backend(self)
         return self._backend
-
-    @property
-    def config_manager(self):
-        if not hasattr(self, '_config_manager'):
-            self._config_manager = config_managers.EtcdConfigManager()
-        return self._config_manager
 
     # TODO: make tasks non-concurrent
     @task
@@ -328,7 +315,7 @@ class Release(AuditedModel):
 class Node(AuditedModel):
     name = models.TextField(validators=[alphanumeric])
     system = models.ForeignKey('System', related_name='nodes')
-    ports = jsonfield.JSONField()
+    ports = jsonfield.JSONField(default={})
     unique_together = ('system', 'name')
 
 
