@@ -1,4 +1,5 @@
 import os
+from mock import Mock
 
 
 class MockFileSystem(object):
@@ -33,3 +34,10 @@ class MockFileSystem(object):
         if data == None:
             raise IOError('file (%s) not found' % path)
         return data
+
+
+def mock_attr(**kwargs):
+    mock = Mock()
+    for key, value in kwargs.iteritems():
+        setattr(mock, key, value)
+    return mock

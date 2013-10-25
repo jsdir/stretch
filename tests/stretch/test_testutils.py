@@ -1,4 +1,5 @@
 from unittest import TestCase
+from nose.tools import eq_
 
 from stretch import testutils
 
@@ -29,3 +30,6 @@ class TestMockFileSystem(TestCase):
         assert self.mock_fs.exists('/root/folder/f_file')
         assert self.mock_fs.exists('/root/folder/f_empty_folder')
         assert self.mock_fs.exists('/root/folder/f_folder')
+
+def test_mock_attr():
+    eq_(testutils.mock_attr(key='value').key, 'value')

@@ -3,6 +3,7 @@ from nose.tools import eq_, assert_raises
 from testtools import TestCase
 
 from stretch import backends
+from stretch.testutils import mock_attr
 
 
 class TestBackendMap(object):
@@ -58,8 +59,8 @@ class TestRackspaceBackend(TestCase):
         self.pyrax = patcher.start()
 
         self.cs = Mock()
-        self.cs.images.list.return_value = [create_mock(name='image')]
-        self.cs.flavors.list.return_value = [create_mock(ram=512)]
+        self.cs.images.list.return_value = [mock_attr(name='image')]
+        self.cs.flavors.list.return_value = [mock_attr(ram=512)]
         self.pyrax.connect_to_cloudservers.return_value = self.cs
 
         self.backend = backends.RackspaceBackend({
@@ -72,7 +73,7 @@ class TestRackspaceBackend(TestCase):
         })
 
     def test_init(self):
-        self.cs.images.list.return_value = [create_mock(name='image22')]
+        self.cs.images.list.return_value = [mock_attr(name='image22')]
 
         options = {
             'username': 'barfoo',
@@ -108,13 +109,13 @@ class TestRackspaceBackend(TestCase):
         backend.store_images = True
         eq_(backend.should_create_image('prefix-name', 'prefix'), (True, None))
 
-        image = create_mock(name='prefix-name', id='id')
+        image = mock_attr(name='prefix-name', id='id')
         self.cs.images.list.return_value = [image]
         eq_(backend.should_create_image('prefix-name', 'prefix'),
             (False, 'id'))
 
-        im1 = create_mock(name='prefix-foo')
-        im2 = create_mock(name='otherprefix-foo')
+        im1 = mock_attr(name='prefix-foo')
+        im2 = mock_attr(name='otherprefix-foo')
         self.cs.images.list.return_value = [im1, im2]
         backend.store_images = False
         backend.should_create_image('prefix-name', 'prefix')
@@ -132,8 +133,8 @@ class TestRackspaceBackend(TestCase):
     @patch('stretch.backends.RackspaceBackend.should_create_image')
     @patch('stretch.backends.RackspaceBackend.provision_host')
     def test_create_host(self, provision_host, should_create_image, get_name):
-        server = create_mock(status='ACTIVE', accessIPv4='publicip',
-                             networks={'private': ['privateip']})
+        server = mock_attr(status='ACTIVE', accessIPv4='publicip',
+                           networks={'private': ['privateip']})
         self.cs.servers.create.return_value = server
         host = Mock()
 
@@ -156,7 +157,7 @@ class TestRackspaceBackend(TestCase):
         s.adminPass = 'password'
         s.create_image.return_value = 'imageid'
         host = Mock()
-        self.cs.images.get.return_value = create_mock(status='ACTIVE')
+        self.cs.images.get.return_value = mock_attr(status='ACTIVE')
 
         self.backend.provision_host(s, '0.0.0.0', host, True, 'p-name', 'p')
         eq_(env.host_string, 'root@0.0.0.0')
@@ -174,10 +175,3 @@ class TestBackend(object):
     @patch('django.conf.settings.STRETCH_BACKEND_IMAGE_PREFIX', 'prefix')
     def test_get_image_name(self):
         eq_(backends.get_image_name(), ('prefix-0.2', 'prefix'))
-
-
-def create_mock(**kwargs):
-    mock = Mock()
-    for key, value in kwargs.iteritems():
-        setattr(mock, key, value)
-    return mock

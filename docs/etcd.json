@@ -1,0 +1,42 @@
+{
+  "system_id": {
+    "name": "system_name",
+    "envs": {
+      "env_id": {
+        "name": "production",
+        "groups": {
+          "group_name": {
+            "instance_id": {
+              "address": "11.22.33.44",
+              "ports": {"http": 23524, "protocol": 23527}
+            }
+          }
+        },
+        "hosts": {
+          "host_name": {
+            "instance_id": {
+              "address": "11.22.33.44",
+              "ports": {"http": 23524, "protocol": 23527}
+            }
+          }
+        },
+        "config": {"key": "value"}
+      }
+    }
+  }
+}
+
+{
+  "system_id": {
+    "environment_id": {
+      "name": "production",
+      "groups": {},
+      "hosts": {},
+      "config": {}
+    }
+  }
+}
+
+'1/envs/2/groups/web'
+'1/envs/2/config/key'
+'1/envs/2/hosts/that_host'

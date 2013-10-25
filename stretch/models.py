@@ -33,7 +33,7 @@ class AuditedModel(models.Model):
 class Service(AuditedModel):
     name = models.TextField(validators=[alphanumeric])
     system = models.ForeignKey('System', related_name='services')
-    data = jsonfield.JSONField()
+    data = jsonfield.JSONField(default={})
     unique_together = ('system', 'name')
 
 
@@ -458,6 +458,7 @@ class LoadBalancer(models.Model):
 
 
 class Host(AuditedModel):
+    # TODO: .name defaults to .fqdn
     fqdn = models.TextField(unique=True)
     hostname = models.TextField()
     domain_name = models.TextField(null=True)
