@@ -1,5 +1,11 @@
 [run]
-omit = */migrations/*
+omit =
+    */migrations/*
+    *settings*
+    *__init__*
+    stretch/urls.py
+    stretch/wsgi.py
+
 source = stretch
 branch = 1
 

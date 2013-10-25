@@ -46,11 +46,11 @@ def makedirs(path):
         else:
             raise
 
-
+"""
 def lock(name):
     lock_dir = settings.LOCK_DIR
     return lockfile.FileLock(os.path.join(lock_dir, '%s.lock' % name))
-
+"""
 
 def generate_random_hex(length=16):
     hexdigits = '0123456789abcdef'
