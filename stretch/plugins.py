@@ -1,7 +1,6 @@
 import os
 import logging
 from subprocess import call
-from django.conf import settings
 from functools import reduce
 
 from stretch import utils, contexts
@@ -10,25 +9,17 @@ from stretch import utils, contexts
 log = logging.getLogger('stretch')
 
 
-class PluginEnvironment(object):
-    def __init__(self, env_name, version):
-        self.env_name = env_name
-        self.version = version
-
-
-class NodePluginEnvironment(PluginEnvironment):
+class NodePluginEnvironment(object):
     def __init__(self):
         super(NodePluginEnvironment, self).__init__()
-        home_dir = settings.HOME_DIR
-
         try:
-            self.npm_path = os.environ.get['NPM_PATH']
+            self.npm_path = os.environ['NPM_PATH']
         except KeyError:
             raise KeyError('NPM_PATH environment variable is undefined')
 
     def install_package(self, package, version, args=[]):
-        call([self.npm_path, 'install', ' '.join(args),
-              '%s@%s' % (package, version)])
+        call([self.npm_path, 'install'] + args + ['%s@%s'
+                                                  % (package, version)])
 
     def call_npm(self, args):
         call([self.npm_path] + args)
@@ -67,6 +58,7 @@ class Plugin(object):
 
         return full_path
 
+    @staticmethod
     def render_template(file_names, path, contexts):
         # Check for template file
         template = None
@@ -78,7 +70,7 @@ class Plugin(object):
                 break
 
         if not template:
-            raise Exception('No template %s found.' % all_file_names)
+            raise NameError('No template for %s found.' % file_names)
 
         # Render template
         dest_file = os.path.splitext(template)[0]
@@ -101,7 +93,7 @@ class MigrationsPlugin(Plugin):
 
     def setup(self):
         if not self.is_setup:
-            self.env = NodePluginEnvironment(self.name, None)
+            self.env = NodePluginEnvironment()
             self.env.install_package('db-migrate', '0.5.4', ['-g'])
             self.is_setup = True
 
@@ -200,7 +192,7 @@ class GruntPlugin(Plugin):
 
     def setup(self):
         if not self.is_setup:
-            self.env = NodePluginEnvironment(self.name, None)
+            self.env = NodePluginEnvironment()
             self.env.install_package('grunt-cli', '0.1.9', ['-g'])
             self.is_setup = True
 

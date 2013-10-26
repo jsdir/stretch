@@ -31,7 +31,6 @@ class MockFileSystem(object):
         return path in self.files.keys()
 
     def open(self, path):
-        print path
         handle = MagicMock(spec=file)
         handle.write.return_value = None
         handle.__enter__.return_value = handle
