@@ -100,7 +100,7 @@ class MigrationsPlugin(Plugin):
     def pre_deploy(self, deploy):
         super(MigrationsPlugin, self).pre_deploy(deploy)
         self.setup()
-        self.migrate(env, deploy, pre_deploy=True)
+        self.migrate(deploy, pre_deploy=True)
 
     def post_deploy(self, deploy):
         super(MigrationsPlugin, self).post_deploy(deploy)
@@ -172,7 +172,8 @@ class MigrationsPlugin(Plugin):
         # Clean up
         os.remove(rendered_file)
 
-    def get_later_migration(self, m1, m2):
+    @staticmethod
+    def get_later_migration(m1, m2):
         if int(m1.split('-')[0]) > int(m2.split('-')[0]):
             return m1
         else:

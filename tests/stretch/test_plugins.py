@@ -63,6 +63,45 @@ class TestPlugin(TestCase):
                 plugins.Plugin.render_template(['a', 't'], '/foo', contexts)
 
 
+class TestMigrationsPlugin(object):
+    def setUp(self):
+        self.plugin = plugins.MigrationsPlugin({}, Mock())
+
+    @patch('stretch.plugins.NodePluginEnvironment', Mock())
+    def test_setup(self):
+        self.plugin.setup()
+        self.plugin.env.install_package.assert_called_with('db-migrate',
+                                                           '0.5.4', ['-g'])
+        assert self.plugin.is_setup
+
+    def test_pre_deploy(self):
+        deploy = Mock()
+        self.plugin.migrate = Mock()
+        with patch.object(self.plugin, 'setup'):
+            self.plugin.pre_deploy(deploy)
+            self.plugin.migrate.assert_called_with(deploy, pre_deploy=True)
+            self.plugin.setup.assert_called_with()
+
+    def test_post_deploy(self):
+        deploy = Mock()
+        self.plugin.migrate = Mock()
+        with patch.object(self.plugin, 'setup'):
+            self.plugin.post_deploy(deploy)
+            self.plugin.migrate.assert_called_with(deploy, pre_deploy=False)
+            self.plugin.setup.assert_called_with()
+
+    def test_get_later_migration(self):
+        eq_(self.plugin.get_later_migration('1-migration.js',
+            '2-migration.js'), '2-migration.js')
+        eq_(self.plugin.get_later_migration('2000-migration.js',
+            '1000-migration.js'), '2000-migration.js')
+
+
+class TestGruntPlugin(object):
+    def test_pre_deploy(self):
+        plugin = plugins.GruntPlugin({}, Mock())
+
+
 @patch('stretch.plugins.Plugin.__subclasses__')
 def test_create_plugin(subc):
     plugin = mock_attr(name='plugin_name')

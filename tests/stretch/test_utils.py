@@ -109,6 +109,13 @@ def test_group_by_attr():
     eq_(group['bar'], [m2])
 
 
+def test_path_contains():
+    assert utils.path_contains('/a/b', '/a/b/c')
+    assert utils.path_contains('/a/b', '/a/b')
+    assert not utils.path_contains('/a/b/c', '/a/b')
+    assert not utils.path_contains('/a/b', '/b/b')
+
+
 # Test start to finish of all 4 source to backend transfer methods,
 # - if signals are triggered
 # - autoloading environments, systems, get_sources, get_backends
