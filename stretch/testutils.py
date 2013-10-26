@@ -1,5 +1,6 @@
 import os
-from mock import Mock
+from cStringIO import StringIO
+from mock import Mock, MagicMock
 
 
 class MockFileSystem(object):
@@ -29,11 +30,18 @@ class MockFileSystem(object):
     def exists(self, path):
         return path in self.files.keys()
 
-    def read_file(self, path):
+    def open(self, path):
+        print path
+        handle = MagicMock(spec=file)
+        handle.write.return_value = None
+        handle.__enter__.return_value = handle
+
         data = self.files.get(path)
         if data == None:
             raise IOError('file (%s) not found' % path)
-        return data
+
+        handle.read.return_value = data
+        return handle
 
 
 def mock_attr(**kwargs):

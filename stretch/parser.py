@@ -20,6 +20,161 @@ docker_client = docker.Client(base_url='unix://var/run/docker.sock',
                               version='1.4')
 
 
+class Snapshot(object):
+    def __init__(self, path):
+        self.path = path
+        self.relative_path = '/'
+        self.nodes = []
+        self.containers = []
+
+        # Begin parsing source
+        self.parse()
+        self.plugins = self.get_plugins()
+        self.monitored_paths = self.get_monitored_paths()
+
+    def parse(self):
+        log.info('Parsing %s' % self.path)
+
+        # Get the build files from the root of the source
+        build_files = get_build_files(self.path)
+
+        # Determine the node declaration from the root build files
+        self.stretch_data = get_data(build_files['stretch'])
+        nodes = self.stretch_data.get('nodes')
+
+        if nodes:
+            # Mulitple node declaration used
+            self.multiple_nodes = True
+            self.build_files = build_files
+
+            for name, path in nodes.iteritems():
+                node_path = os.path.join(self.path, path)
+                self.nodes.append(Node(node_path, path, self, name))
+        else:
+            # Individual node declaration used
+            self.multiple_nodes = False
+            self.nodes.append(Node(self.path, self.relative_path, self))
+
+    def get_plugins(self):
+        log.info('Loading plugins...')
+
+        plugins = []
+
+        objects = self.nodes
+        if self.multiple_nodes:
+            objects = [self] + objects
+
+        for obj in objects:
+            obj_plugins = obj.stretch_data.get('plugins')
+            if obj_plugins:
+                for name, options in obj_plugins.iteritems():
+                    plugins.append(create_plugin(name, options, obj))
+
+        return plugins
+
+    def get_monitored_paths(self):
+        log.info('Searching for paths to monitor...')
+
+        monitored_paths = {}
+
+        def add_path(node, path):
+            if node in monitored_paths:
+                monitored_paths[node].append(path)
+            else:
+                monitored_paths[node] = [path]
+
+        # Find app paths
+        for node in self.nodes:
+            if node.app_path:
+                add_path(node, node.app_path)
+
+        # Find plugin paths
+        for plugin in self.plugins:
+            add_path(plugin.parent, plugin.monitored_paths)
+
+        return monitored_paths
+
+    def build_and_push(self, release, system):
+        [node.container.build(release, system, node) for node in self.nodes]
+
+    def run_build_plugins(self, deploy, nodes=None):
+        for plugin in self.plugins:
+            if nodes and plugin.parent in nodes:
+                plugin.build(deploy)
+
+    def run_pre_deploy_plugins(self, deploy, nodes=None):
+        for plugin in self.plugins:
+            if nodes and plugin.parent in nodes:
+                plugin.pre_deploy(deploy)
+
+    def run_post_deploy_plugins(self, deploy, nodes=None):
+        for plugin in self.plugins:
+            if nodes and plugin.parent in nodes:
+                plugin.post_deploy(deploy)
+
+    def copy_to_buffer(self, path):
+        dir_util.copy_tree(self.path, path)
+
+    @contextmanager
+    def mount_templates(self, path):
+        """
+        path/
+            node.name/
+                template1
+                template2
+            node.name/
+                template1
+                template2
+        """
+        for node in self.nodes:
+            dest_path = os.path.join(path, node.name)
+            utils.clear_path(dest_path)
+            templates_path = os.path.join(node.container.path, 'templates')
+            if os.path.exists(templates_path):
+                dir_util.copy_tree(templates_path, dest_path)
+        yield
+        utils.clear_path(path)
+
+
+class Node(object):
+    def __init__(self, path, relative_path, snapshot, name=None):
+        self.path = os.path.realpath(path)
+        self.relative_path = relative_path
+        self.name = name
+        self.snapshot = snapshot
+
+        # Begin parsing node
+        self.parse()
+
+    def parse(self):
+        log.info('Parsing node %s' % self.relative_path)
+
+        # Get the build files from the root of the node
+        self.build_files = get_build_files(self.path)
+
+        # Find node's name if not defined
+        stretch_file = self.build_files['stretch']
+        self.stretch_data = get_data(stretch_file)
+        if not self.name:
+            self.name = self.stretch_data.get('name')
+            if not self.name:
+                raise exceptions.UndefinedParam('name', stretch_file)
+
+        # Find containers
+        container = self.stretch_data.get('container')
+        if container:
+            path = os.path.join(self.path, container)
+        else:
+            path = self.path
+        self.container = Container.create(path, self.snapshot.containers,
+                                          ancestor_paths=[])
+
+        # Find app path
+        self.app_path = os.path.join(self.container.path, 'app')
+        if not os.path.exists(self.app_path):
+            self.app_path = None
+
+
 class Container(object):
     def __init__(self, path, containers, parent, ancestor_paths):
         self.base_container = None
@@ -146,198 +301,6 @@ class Container(object):
             self.built = True
 
 
-class Node(object):
-    def __init__(self, path, relative_path, snapshot, name=None):
-        self.path = os.path.realpath(path)
-        self.relative_path = relative_path
-        self.name = name
-        self.snapshot = snapshot
-
-        # Begin parsing node
-        self.parse()
-
-    def parse(self):
-        log.info('Parsing node %s' % self.relative_path)
-
-        # Get the build files from the root of the node
-        self.build_files = get_build_files(self.path)
-
-        # Find node's name if not defined
-        stretch_file = self.build_files['stretch']
-        self.stretch_data = get_data(stretch_file)
-        if not self.name:
-            self.name = self.stretch_data.get('name')
-            if not self.name:
-                raise exceptions.UndefinedParam('name', stretch_file)
-
-        # Find containers
-        container = self.stretch_data.get('container')
-        if container:
-            path = os.path.join(self.path, container)
-        else:
-            path = self.path
-        self.container = Container.create(path, self.snapshot.containers,
-                                          ancestor_paths=[])
-
-        # Find app path
-        self.app_path = os.path.join(self.container.path, 'app')
-        if not os.path.exists(self.app_path):
-            self.app_path = None
-
-
-class Snapshot(object):
-    def __init__(self, path):
-        self.path = path
-        self.relative_path = '/'
-        self.nodes = []
-        self.containers = []
-
-        # Begin parsing source
-        self.parse()
-        self.plugins = self.get_plugins()
-        self.monitored_paths = self.get_monitored_paths()
-
-    def parse(self):
-        log.info('Parsing %s' % self.path)
-
-        # Get the build files from the root of the source
-        build_files = get_build_files(self.path)
-
-        # Determine the node declaration from the root build files
-        self.stretch_data = get_data(build_files['stretch'])
-        nodes = self.stretch_data.get('nodes')
-
-        if nodes:
-            # Mulitple node declaration used
-            self.multiple_nodes = True
-            self.build_files = build_files
-
-            for name, path in nodes.iteritems():
-                node_path = os.path.join(self.path, path)
-                self.nodes.append(Node(node_path, path, self, name))
-        else:
-            # Individual node declaration used
-            self.multiple_nodes = False
-            self.nodes.append(Node(self.path, self.relative_path, self))
-
-    def get_plugins(self):
-        log.info('Loading plugins...')
-
-        plugins = []
-
-        objects = self.nodes
-        if self.multiple_nodes:
-            objects = [self] + objects
-
-        for obj in objects:
-            obj_plugins = obj.stretch_data.get('plugins')
-            if obj_plugins:
-                for name, options in obj_plugins.iteritems():
-                    plugins.append(create_plugin(name, options, obj))
-
-        return plugins
-
-    def get_monitored_paths(self):
-        log.info('Searching for paths to monitor...')
-
-        monitored_paths = {}
-
-        def add_path(node, path):
-            if node in monitored_paths:
-                monitored_paths[node].append(path)
-            else:
-                monitored_paths[node] = [path]
-
-        # Find app paths
-        for node in self.nodes:
-            if node.app_path:
-                add_path(node, node.app_path)
-
-        # Find plugin paths
-        for plugin in self.plugins:
-            add_path(plugin.parent, plugin.monitored_paths)
-
-        return monitored_paths
-
-    def build_and_push(self, release, system):
-        [node.container.build(release, system, node) for node in self.nodes]
-
-    def run_build_plugins(self, deploy, nodes=None):
-        for plugin in self.plugins:
-            if nodes and plugin.parent in nodes:
-                plugin.build(deploy)
-
-    def run_pre_deploy_plugins(self, deploy, nodes=None):
-        for plugin in self.plugins:
-            if nodes and plugin.parent in nodes:
-                plugin.pre_deploy(deploy)
-
-    def run_post_deploy_plugins(self, deploy, nodes=None):
-        for plugin in self.plugins:
-            if nodes and plugin.parent in nodes:
-                plugin.post_deploy(deploy)
-
-    def copy_to_buffer(self, path):
-        dir_util.copy_tree(self.path, path)
-
-    def get_config(self):
-        """
-        Return configuration that can be easily reconstructed
-
-        If individual:
-            Returns: {
-                nodes: {
-                    node.name: config_source,
-                }
-            }
-        If multiple:
-            Returns: {
-                global: config_source,
-                nodes: {
-                    node.name: config_source,
-                    node.name: config_source
-                }
-            }
-        """
-        config = {'nodes': {}}
-
-        if self.multiple_nodes:
-            config_file = self.build_files.get('config')
-            if config_file:
-                config['global'] = read_file(config_file)
-
-        for node in self.nodes:
-            config_file = node.build_files.get('config')
-            if config_file:
-                config['nodes'][node.name] = read_file(config_file)
-
-        return config
-
-    def save_config(self, path):
-        json.dump(self.get_config(), open(path, 'w'))
-
-    @contextmanager
-    def mount_templates(self, path):
-        """
-        path/
-            node.name/
-                template1
-                template2
-            node.name/
-                template1
-                template2
-        """
-        for node in self.nodes:
-            dest_path = os.path.join(path, node.name)
-            utils.clear_path(dest_path)
-            templates_path = os.path.join(node.container.path, 'templates')
-            if os.path.exists(templates_path):
-                dir_util.copy_tree(templates_path, dest_path)
-        yield
-        utils.clear_path(path)
-
-
-
 def read_file(path):
     with open(path) as source:
         return source.read()
@@ -359,57 +322,4 @@ def get_build_files(path):
     else:
         raise exceptions.MissingFile(stretch_path)
 
-    config_path = os.path.join(path, 'config.yml')
-    if os.path.exists(config_path):
-        build_files['config'] = config_path
-
     return build_files
-
-def render_config(config, deploy):
-
-    def get_config(data, default={}):
-        context_list = [contexts.create_deploy_context(deploy)]
-        config = utils.render_template(data, context_list)
-        return yaml.load(config) or default
-
-    result = {}
-    global_config = {}
-    nodes_config = {}
-    global_data = config.get('global')
-
-    if global_data:
-        # Apply global configuration
-        for _, block in get_config(global_data).iteritems():
-            block_config = block.get('config', {})
-            block_nodes = block.get('nodes', [])
-
-            if block_nodes:
-                # Local block
-                for node in block_nodes:
-                    if nodes_config.has_key(node):
-                        utils.update(nodes_config[node], block_config)
-                    else:
-                        nodes_config[node] = block_config
-            else:
-                # Global block
-                utils.update(global_config, block_config)
-
-    # Compile node configuration
-    for name, data in nodes_config.iteritems():
-        node_config = {}
-        utils.update(node_config, global_config)
-        utils.update(node_config, data)
-        result[name] = node_config
-
-    for name, data in config.get('nodes').iteritems():
-        node_config = {}
-        utils.update(node_config, global_config)
-        utils.update(node_config, nodes_config.get(name, {}))
-        utils.update(node_config, get_config(data))
-
-        if result.has_key(name):
-            utils.update(result[name], node_config)
-        else:
-            result[name] = node_config
-
-    return result

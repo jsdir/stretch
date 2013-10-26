@@ -31,11 +31,11 @@ class TestMockFileSystem(TestCase):
         assert self.mock_fs.exists('/root/folder/f_empty_folder')
         assert self.mock_fs.exists('/root/folder/f_folder')
 
-    def test_read_file(self):
+    def test_open(self):
         with assert_raises(IOError):
-            self.mock_fs.read_file('/root/undefined')
+            self.mock_fs.open('/root/undefined')
 
-        eq_(self.mock_fs.read_file('/root/folder/f_file'), 'f_file_source')
+        eq_(self.mock_fs.open('/root/folder/f_file').read(), 'f_file_source')
 
 
 def test_mock_attr():
