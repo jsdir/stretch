@@ -41,6 +41,7 @@ class TestParser(TestCase):
         with self.mock_fs('/foo') as fs:
             fs.set_files({'stretch.yml': ''})
 
+
 class TestNode(object):
     pass
 
