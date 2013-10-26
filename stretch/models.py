@@ -53,15 +53,13 @@ class System(AuditedModel):
                     log.debug('Backend does not autoload. Skipping.')
 
     @property
+    @utils.memoized
     def source(self):
         # Only one source is used per system for now
-        if not hasattr(self, '_source'):
-            system_sources = sources.get_sources(self)
-            if system_sources:
-                self._source = system_sources[0]
-            else:
-                raise exceptions.UndefinedSource()
-        return self._source
+        system_sources = sources.get_sources(self)
+        if not system_sources:
+            raise exceptions.UndefinedSource()
+        return system_sources[0]
 
 
 class Environment(AuditedModel):
@@ -72,10 +70,9 @@ class Environment(AuditedModel):
     using_source = models.BooleanField(default=False)
 
     @property
+    @utils.memoized
     def backend(self):
-        if not hasattr(self, '_backend'):
-            self._backend = backends.get_backend(self)
-        return self._backend
+        return backends.get_backend(self)
 
     # TODO: make tasks non-concurrent
     @task
@@ -156,7 +153,13 @@ class Environment(AuditedModel):
                                      str(self.pk))
         with snapshot.mount_templates(template_path):
 
+            deployed_hosts = []
             def callback(instance):
+                if instance.host not in deployed_hosts:
+                    deployed_hosts.append(instance.host)
+                    instance.host.deploy_release()
+
+
                 if is_release:
                     instance.deploy(sha=obj.sha)
                 else:
@@ -193,61 +196,12 @@ class Environment(AuditedModel):
             if instance.node.name in node_names:
                 instance.reload(remember=False)
 
-    def get_config_path(self):
-        """
-        Returns the path to the configuration templates used by a source.
-        """
-        return os.path.join(settings.STRETCH_DATA_DIR, 'environments',
-                            str(self.pk), 'config.json')
-
-    def update_config(self):
-        log.info('Updating config...')
-        config_data = None
-        if self.current_release:
-            config_data = self.current_release.get_config()
-        elif self.using_source:
-            config_data = json.load(open(self.get_config_path()))
-
-        if config_data:
-            # Use stub deploy
-            deploy = Deploy.create(environment=self)
-
-            rendered_config = {}
-            for name, config in parser.render_config(config_data,
-                                                     deploy).iteritems():
-                try:
-                    node_id = str(Node.objects.get(name=name).pk)
-                    rendered_config[node_id] = config
-                except Node.DoesNotExist:
-                   pass
-
-            log.debug('Using config: %s' % rendered_config)
-            # TODO: map to hosts or improve efficiency
-            [host.load_config(rendered_config) for host in self.hosts.all()]
-
-
     def map_instances(self, callback):
-        instance_count = self.instances.count()
-        batch_size = min(instance_count / 2, settings.STRETCH_BATCH_SIZE)
+        batch_size = min(self.instances.count() / 2,
+                         settings.STRETCH_BATCH_SIZE)
 
-        remaining = list(self.instances.all())
-        pending = []
-
-        while remaining or pending:
-            while len(pending) < instance_count and remaining:
-                instance = remaining.pop()
-                instance.deactivate()
-                callback(instance)
-                pending.append(instance)
-
-            time.sleep(0.5)
-
-            for instance in pending:
-                if instance.jobs_finished():
-                    instance.activate()
-                    pending.remove(instance)
-
-        # TODO: Do simultaneously with node types (instance.node)
+        groups = utils.group_by_attr(self.instances.all(), 'group')
+        results = utils.map_groups(callback, groups, batch_size)
 
 
 class Release(AuditedModel):

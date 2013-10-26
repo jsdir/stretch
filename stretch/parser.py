@@ -243,7 +243,7 @@ class Snapshot(object):
         monitored_paths = {}
 
         def add_path(node, path):
-            if monitored_paths.has_key(node):
+            if node in monitored_paths:
                 monitored_paths[node].append(path)
             else:
                 monitored_paths[node] = [path]

@@ -1,4 +1,4 @@
-from mock import Mock, patch
+from mock import Mock, patch, call
 from nose.tools import eq_, assert_raises
 import errno
 
@@ -80,6 +80,33 @@ def test_generate_random_hex(choice):
     eq_(utils.generate_random_hex(4), 'aaaa')
 
 
+@patch('stretch.utils.time')
+def test_map_groups(mock_time):
+    # TODO: refactor to test batch_size
+
+    on_finish = Mock()
+
+    def callback(item):
+        def is_finished():
+            return 'result'
+        return is_finished
+
+    groups = {'g1': [1, 2, 3], 'g2': [4, 5, 6, 7, 8, 9, 10]}
+    result = utils.map_groups(callback, groups, 3, on_finish, 1.0)
+
+    expected_result = [call(_, 'result') for _ in xrange(10)]
+    assert testutils.check_items_equal(result, expected_result)
+    assert testutils.check_items_equal(on_finish.mock_calls, expected_result)
+
+    mock_time.sleep.assert_called_with(1.0)
+
+
+def test_group_by_attr():
+    m1 = Mock(spec=['a'], a='foo')
+    m2 = Mock(spec=['a'], a='bar')
+    group = utils.group_by_attr([m1, m2], 'a')
+    eq_(group['foo'], [m1])
+    eq_(group['bar'], [m2])
 
 
 # Test start to finish of all 4 source to backend transfer methods,

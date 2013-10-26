@@ -10,6 +10,7 @@ import collections
 import subprocess
 import tempfile
 import cPickle
+import time
 from distutils import dir_util
 from django.conf import settings
 
@@ -120,6 +121,49 @@ def tmp_dir(path=None):
 
 def path_contains(path, file_path):
     return not os.path.relpath(file_path, path).startswith('..')
+
+
+def group_by_attr(items, attr_name):
+    group = {}
+    for item in items:
+        attr = getattr(item, attr_name)
+        if attr in group:
+            group[attr].append(item)
+        else:
+            group[attr] = [item]
+    return group
+
+
+def map_groups(callback, groups, batch_size, on_finish=None, interval=1.0):
+    results = {}
+    pending = dict((key, {}) for key in groups.keys())
+
+    def has_items(group):
+        for _, items in group.iteritems():
+            if items:
+                return True
+        return False
+
+    while has_items(groups) or has_items(pending):
+        # Queue jobs
+        for group, items in groups.iteritems():
+            while len(pending[group]) < batch_size and items:
+                item = items.pop()
+                pending[group][item] = callback(item)
+
+        time.sleep(interval)
+
+        # Collect finished jobs and their results
+        for group, items in dict(pending).iteritems():
+            for item, is_finished in dict(items).iteritems():
+                result = is_finished()
+                if result != None:
+                    if on_finish:
+                        on_finish(item, result)
+                    results[item] = result
+                    pending[group].pop(item, None)
+
+    return results
 
 
 def generate_memorable_name():  # pragma: no cover

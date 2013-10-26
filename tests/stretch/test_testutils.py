@@ -40,3 +40,8 @@ class TestMockFileSystem(TestCase):
 
 def test_mock_attr():
     eq_(testutils.mock_attr(key='value').key, 'value')
+
+
+def test_check_items_equal():
+    assert testutils.check_items_equal([1, 2], [2, 1])
+    assert not testutils.check_items_equal([1, 2], [1, 2, 3])

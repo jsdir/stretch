@@ -41,3 +41,7 @@ def mock_attr(**kwargs):
     for key, value in kwargs.iteritems():
         setattr(mock, key, value)
     return mock
+
+
+def check_items_equal(l1, l2):
+    return len(l1) == len(l2) and sorted(l2) == sorted(l2)

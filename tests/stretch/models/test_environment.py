@@ -1,20 +1,30 @@
-from mock import patch
+from mock import patch, Mock
 from nose.tools import eq_
+from unittest import TestCase
 
 from stretch import models
 
 
-class TestEnvironment(object):
+class TestEnvironment(TestCase):
+    def setUp(self):
+        self.env = models.Environment(name='env')
+
     @patch('stretch.backends.get_backend')
     def test_backend(self, get_backend):
         get_backend.return_value = 'foo'
-        env = models.Environment(name='env')
-        eq_(env.backend, 'foo')
+        eq_(self.env.backend, 'foo')
 
-    @patch('django.conf.settings.STRETCH_DATA_DIR', '/data')
-    def test_get_config_path(self):
-        env = models.Environment(name='env', id=22)
-        eq_(env.get_config_path(), '/data/environments/22/config.json')
+    @patch('django.conf.settings.STRETCH_BATCH_SIZE', 3)
+    @patch('stretch.models.Environment.instances')
+    @patch('stretch.utils.map_groups')
+    def test_map_instances(self, map_groups, instances):
+        callback = Mock()
+        i_foo = Mock(spec=['group'], group='foo')
+        i_bar = Mock(spec=['group'], group='bar')
+        instances.all.return_value = [i_foo, i_bar]
+        self.env.map_instances(callback)
+        map_groups.assert_called_with(callback,
+                                      {'foo': [i_foo], 'bar': [i_bar]}, 3)
 
     """
     def test_update_config(self):
