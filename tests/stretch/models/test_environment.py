@@ -1,8 +1,8 @@
 from mock import patch, Mock
-from nose.tools import eq_
+from nose.tools import eq_, assert_raises
 from unittest import TestCase
 
-from stretch import models
+from stretch import models, testutils
 
 
 class TestEnvironment(TestCase):
@@ -25,6 +25,47 @@ class TestEnvironment(TestCase):
         self.env.map_instances(callback)
         map_groups.assert_called_with(callback,
                                       {'foo': [i_foo], 'bar': [i_bar]}, 3)
+
+    @patch('stretch.models.Environment.current_release')
+    @patch('stretch.models.Deploy')
+    def test_save_deploy(self, mock_deploy, current_release):
+        task = Mock()
+        release = Mock()
+
+        deploy = self.env.save_deploy(task, release)
+        mock_deploy.create.assert_called_with(
+            environment=self.env,
+            existing_release=current_release,
+            release=release,
+            task_id=task.request.id
+        )
+        deploy.save.assert_called_with()
+
+    def test_check_release(self):
+        release = testutils.mock_attr(sha='sha')
+        source = Mock(spec=['pull'], pull=Mock())
+        assert self.env.check_release(release)
+        assert not self.env.check_release(source)
+        with assert_raises(TypeError):
+            self.env.check_release('')
+
+    @patch('stretch.models.Deploy')
+    @patch('stretch.models.Environment.instances')
+    def test_autoload(self, instances, mock_deploy):
+        mock_attr = testutils.mock_attr
+        deploy = Mock()
+        mock_deploy.create.return_value = deploy
+        source = Mock()
+        nodes = [mock_attr(name='foo')]
+        foo_instance = mock_attr(node=mock_attr(name='foo'))
+        bar_instance = mock_attr(node=mock_attr(name='bar'))
+        instances.all.return_value = [foo_instance, bar_instance]
+        self.env.autoload(source, nodes)
+
+        foo_instance.reload.assert_called_with(remember=False)
+        assert not bar_instance.reload.called
+        source.run_build_plugins.assert_called_with(deploy, nodes)
+        mock_deploy.create.assert_called_with(environment=self.env)
 
     """
     def test_update_config(self):

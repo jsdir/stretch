@@ -39,16 +39,11 @@ class System(AuditedModel):
 
     def sync_source(self, nodes=None):
         if hasattr(self.source, 'autoload') and self.source.autoload:
-
-            def callback(env):
-                if nodes:
-                    env.autoload.delay(self.source, nodes)
-                else:
-                    env.deploy.delay(self.source)
-
             for env in self.environments.all():
-                if env.backend.autoloads:
-                    callback(env)
+                if env.backend.autoloads and nodes:
+                    env.autoload.delay(self.source, nodes)
+                elif env.backend.autoloads:
+                    env.deploy.delay(self.source)
                 else:
                     log.debug('Backend does not autoload. Skipping.')
 
@@ -79,108 +74,39 @@ class Environment(AuditedModel):
     def deploy(self, obj):
         log.info('Deploying %s to %s/%s' % (obj, self.system.name, self.name))
 
-        total_steps = 8
-
-        def update_status(current_step, description):
-            log.info(description)
-            current_task.update_state(state='PROGRESS', meta={
-                                      'description': description,
-                                      'current': current_step,
-                                      'total': total_steps})
-
-        existing_release = self.current_release
-        deploy = Deploy.create(
-            environment=self,
-            existing_release=existing_release,
-            task_id=current_task.request.id
-        )
-
-        if hasattr(obj, 'get_snapshot'):
-            is_release = True
-            deploy.release = obj
-        elif hasattr(obj, 'pull'):
-            is_release = False
-        else:
-            raise Exception('cannot deploy object "%s"' % obj)
-
-        log.info('Saving deploy')
-        deploy.save()
-        log.info('Finished saving deploy')
-
-        # Pull release
-        update_status(1, 'Pulling release')
-
+        is_release = self.check_release(obj)
         if is_release:
+            deploy = self.save_deploy(current_task, obj)
             deploy.snapshot = obj.get_snapshot()
-            if existing_release:
-                deploy.existing_snapshot = existing_release.get_snapshot()
-        else:
-            deploy.snapshot = parser.Snapshot(utils.tmp_dir(obj.pull()))
-
-        snapshot = deploy.snapshot
-
-        # Update current release
-        update_status(2, 'Setting new release')
-
-        self.using_source = not is_release
-
-        if is_release:
+            if self.existing_release:
+                deploy.existing_snapshot = self.existing_release.get_snapshot()
             self.current_release = obj
         else:
+            deploy = self.save_deploy(current_task)
+            deploy.snapshot = parser.Snapshot(utils.tmp_dir(obj.pull()))
             self.current_release = None
 
-        update_status(3, 'Running build plugins')
-        snapshot.run_build_plugins(deploy)
-
-        update_status(4, 'Running pre-deploy plugins')
-        snapshot.run_pre_deploy_plugins(deploy)
-
-        # Deploy to backend
-        update_status(5, 'Deploying to backend...')
+        self.using_source = not is_release
+        deploy.snapshot.run_build_plugins(deploy)
+        deploy.snapshot.run_pre_deploy_plugins(deploy)
 
         # Build images and save config if source deploy; images are already
         # built for releases
-        if not is_release:
+        if is_release:
+            self.deploy_release(obj.sha)
+        else:
             snapshot.build_and_push(None, self.system)
             config_path = self.get_config_path()
             utils.makedirs(os.path.split(config_path)[0])
-            snapshot.save_config(config_path)
+            deploy.snapshot.save_config(config_path)
+            self.deploy_source(snapshot.nodes)
 
-        # Deploy config
-        self.update_config()
-
-        template_path = os.path.join(settings.STRETCH_CACHE_DIR, 'templates',
-                                     str(self.pk))
-        with snapshot.mount_templates(template_path):
-
-            deployed_hosts = []
-            def callback(instance):
-                if instance.host not in deployed_hosts:
-                    deployed_hosts.append(instance.host)
-                    instance.host.deploy_release()
-
-
-                if is_release:
-                    instance.deploy(sha=obj.sha)
-                else:
-                    for node in snapshot.nodes:
-                        if node.name == instance.node.name and node.app_path:
-                            instance.deploy(app_path=node.app_path)
-                            break
-
-            self.map_instances(callback)
-
-        update_status(6, 'Running post-deploy plugins')
         deploy.snapshot.run_post_deploy_plugins(deploy)
-
-        # Delete temporary directories
-        update_status(7, 'Cleaning up')
 
         utils.delete_path(snapshot.path)
         if deploy.existing_snapshot:
             utils.delete_path(deploy.existing_snapshot.path)
 
-        update_status(8, 'Saving environment changes')
         self.save()
 
     @task
@@ -195,6 +121,49 @@ class Environment(AuditedModel):
         for instance in self.instances.all():
             if instance.node.name in node_names:
                 instance.reload(remember=False)
+
+    def save_deploy(self, deploy_task, release=None):
+        deploy = Deploy.create(
+            environment=self,
+            existing_release=self.current_release,
+            release=release,
+            task_id=deploy_task.request.id
+        )
+        deploy.save()
+        return deploy
+
+    def check_release(self, obj):
+        if hasattr(obj, 'sha'):
+            return True
+        elif hasattr(obj, 'pull'):
+            return False
+        else:
+            raise TypeError('cannot deploy object "%s"' % obj)
+
+    def deploy_release(self, sha, snapshot):
+
+        def deploy(instance):
+            # Remove from load balancer: if instance.host has other instances: ignore
+            instance.deploy(sha=sha)
+
+        with self.mount_templates(snapshot):
+            self.map_instances(deploy)
+
+    def deploy_source(self, nodes, snapshot):
+
+        def deploy(instance):
+            # Remove from load balancer: if instance.host has other instances: ignore
+            for node in nodes:
+                if node.name == instance.node.name and node.app_path:
+                    instance.deploy(app_path=node.app_path)
+                    break
+
+        with self.mount_templates(snapshot):
+            self.map_instances(deploy)
+
+    def mount_templates(self):
+        pass
+        #template_path = os.path.join(settings.STRETCH_CACHE_DIR, 'templates', str(self.pk))
 
     def map_instances(self, callback):
         batch_size = min(self.instances.count() / 2,
@@ -576,6 +545,13 @@ class Deploy(AuditedModel):
 
     def is_from_release(self):
         return bool(self.release)
+
+    def update_status(current_step, description):
+        log.info(description)
+        current_task.update_state(state='PROGRESS', meta={
+                                  'description': description,
+                                  'current': current_step,
+                                  'total': total_steps})
 
 
 @receiver(signals.sync_source)
