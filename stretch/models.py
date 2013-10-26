@@ -63,6 +63,7 @@ class Environment(AuditedModel):
     system = models.ForeignKey('System', related_name='environments')
     current_release = models.ForeignKey('Release', null=True)
     using_source = models.BooleanField(default=False)
+    config = jsonfield.JSONField(default={})
 
     @property
     @utils.memoized
