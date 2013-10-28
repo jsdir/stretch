@@ -111,7 +111,7 @@ def check_output(*args, **kwargs):
     return output
 
 
-def tmp_dir(path=None):
+def temp_dir(path=None):
     makedirs(settings.STRETCH_TEMP_DIR)
     tmp_path = tempfile.mkdtemp(prefix='%s/' % settings.STRETCH_TEMP_DIR)
     if path:

@@ -6,11 +6,23 @@ from stretch import sources, signals
 
 
 class TestSource(object):
+    def setUp(self):
+        self.source = sources.Source({'foo': 'bar'})
+
     @raises(NameError)
     def test_require_option(self):
-        source = sources.Source({'foo': 'bar'})
-        eq_(source.require_option('foo'), 'bar')
-        source.require_option('what')
+        eq_(self.source.require_option('foo'), 'bar')
+        self.source.require_option('what')
+
+    @patch('stretch.sources.utils')
+    def test_get_snapshot(self, mock_utils):
+
+        def mock_temp_dir(path):
+            return path
+
+        mock_utils.temp_dir = mock_temp_dir
+        self.source.pull = Mock(return_value='/dir')
+        eq_(self.source.get_snapshot(), '/dir')
 
 
 class TestAutoloadableSource(object):

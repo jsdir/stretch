@@ -50,6 +50,12 @@ class Source(object):
             raise NameError('no option "%s" defined' % name)
         return option
 
+    def get_snapshot(self):
+        """
+        Returns the path of a temporary directory containing the pulled source.
+        """
+        return utils.temp_dir(self.pull())
+
 
 class GitRepositorySource(Source):
     """

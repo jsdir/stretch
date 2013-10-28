@@ -17,3 +17,7 @@ docker-py:
     - require:
       - pkg: python-pip
       - pkg: lxc-docker
+
+# TODO
+# ufw installed
+# redirect some < 1024 port to ssh daemon and block external access to :22

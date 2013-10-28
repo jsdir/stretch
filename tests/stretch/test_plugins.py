@@ -96,6 +96,14 @@ class TestMigrationsPlugin(object):
         eq_(self.plugin.get_later_migration('2000-migration.js',
             '1000-migration.js'), '2000-migration.js')
 
+    def test_migrate(self):
+        deploy = Mock()
+        #self.plugin.migrate(deploy, True)
+        #self.plugin.migrate(deploy, False)
+
+    def test_run_migration(self):
+        pass
+
 
 class TestGruntPlugin(object):
     def test_pre_deploy(self):

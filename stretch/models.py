@@ -5,6 +5,7 @@ import json
 import time
 import jsonfield
 import uuidfield
+from contextlib import contextmanager
 from django.db import models
 from django.dispatch import receiver
 from django.core.validators import RegexValidator
@@ -75,39 +76,25 @@ class Environment(AuditedModel):
     def deploy(self, obj):
         log.info('Deploying %s to %s/%s' % (obj, self.system.name, self.name))
 
-        is_release = self.check_release(obj)
-        if is_release:
-            deploy = self.save_deploy(current_task, obj)
-            deploy.snapshot = obj.get_snapshot()
-            if self.existing_release:
-                deploy.existing_snapshot = self.existing_release.get_snapshot()
-            self.current_release = obj
-        else:
+        if hasattr(obj, 'pull'):
             deploy = self.save_deploy(current_task)
-            deploy.snapshot = parser.Snapshot(utils.tmp_dir(obj.pull()))
             self.current_release = None
-
-        self.using_source = not is_release
-        deploy.snapshot.run_build_plugins(deploy)
-        deploy.snapshot.run_pre_deploy_plugins(deploy)
-
-        # Build images and save config if source deploy; images are already
-        # built for releases
-        if is_release:
-            self.deploy_release(obj.sha)
+            self.using_source = True
         else:
-            snapshot.build_and_push(None, self.system)
-            config_path = self.get_config_path()
-            utils.makedirs(os.path.split(config_path)[0])
-            deploy.snapshot.save_config(config_path)
-            self.deploy_source(snapshot.nodes)
+            deploy = self.save_deploy(current_task, obj)
+            if self.current_release:
+                deploy.existing_snapshot = self.current_release.get_snapshot()
+            self.current_release = obj
+            self.using_source = False
 
-        deploy.snapshot.run_post_deploy_plugins(deploy)
-
-        utils.delete_path(snapshot.path)
-        if deploy.existing_snapshot:
-            utils.delete_path(deploy.existing_snapshot.path)
-
+        snapshot = obj.get_snapshot()
+        with deploy.start(snapshot):
+            if self.using_source:
+                # Build new images specifically for source
+                snapshot.build_and_push(None, self.system)
+                self.deploy_to_instances(snapshot, nodes=snapshot.nodes)
+            else:
+                self.deploy_to_instances(snapshot, sha=obj.sha)
         self.save()
 
     @task
@@ -141,30 +128,33 @@ class Environment(AuditedModel):
         else:
             raise TypeError('cannot deploy object "%s"' % obj)
 
-    def deploy_release(self, sha, snapshot):
+    def deploy_to_instances(self, snapshot, sha=None, nodes=None):
+
+        def check(self, instance, is_finished):
+            deactivated = instance.deactivate()
+
+            def is_finished_job():
+                result = is_finished()
+                if result != False and deactivated:
+                    instance.activate()
+                return result
+
+            return is_finished_job
 
         def deploy(instance):
-            # Remove from load balancer: if instance.host has other instances: ignore
-            instance.deploy(sha=sha)
+            if sha:
+                return check(instance, instance.deploy(sha=sha))
+            elif nodes:
+                for node in nodes:
+                    if node.name == instance.node.name and node.app_path:
+                        return check(instance.deploy(app_path=node.app_path))
 
-        with self.mount_templates(snapshot):
+            return None
+
+        template_path = os.path.join(settings.STRETCH_CACHE_DIR, 'templates',
+                                     str(self.pk))
+        with snapshot.mount_templates(template_path):
             self.map_instances(deploy)
-
-    def deploy_source(self, nodes, snapshot):
-
-        def deploy(instance):
-            # Remove from load balancer: if instance.host has other instances: ignore
-            for node in nodes:
-                if node.name == instance.node.name and node.app_path:
-                    instance.deploy(app_path=node.app_path)
-                    break
-
-        with self.mount_templates(snapshot):
-            self.map_instances(deploy)
-
-    def mount_templates(self):
-        pass
-        #template_path = os.path.join(settings.STRETCH_CACHE_DIR, 'templates', str(self.pk))
 
     def map_instances(self, callback):
         batch_size = min(self.instances.count() / 2,
@@ -227,11 +217,6 @@ class Release(AuditedModel):
         tar_file.close()
         return parser.Snapshot(tmp_path)
 
-    def get_config(self):
-        config_path = os.path.join(self.get_data_dir(), 'config.json')
-        with open(config_path) as config_file:
-            return json.loads(config_file.read())
-
     def get_data_dir(self):
         return os.path.join(settings.STRETCH_DATA_DIR, 'releases', self.sha)
 
@@ -241,12 +226,6 @@ class Node(AuditedModel):
     system = models.ForeignKey('System', related_name='nodes')
     ports = jsonfield.JSONField(default={})
     unique_together = ('system', 'name')
-
-
-class PortBinding(AuditedModel):
-    instance = models.ForeignKey('Instance', related_name='port_bindings')
-    source = models.IntegerField()
-    destination = models.IntegerField()
 
 
 class Instance(AuditedModel):
@@ -304,12 +283,18 @@ class Instance(AuditedModel):
                                      app_path], **kwargs)
 
     def activate(self):
-        if self.host.group:
-            self.host.group.activate(self.host)
+        pass
+        #if self.host.group:
+        #    self.host.group.activate(self.host)
 
     def deactivate(self):
-        if self.host.group:
-            self.host.group.deactivate(self.host)
+        host_instances = self.host.instances.all()
+        if len(host_instances) > 1 and instance in host_instances:
+            self.remove_from_load_balancer()
+            return True
+        return False
+        #if self.host.group:
+        #    self.host.group.deactivate(self.host)
 
     def call(self, cmd, args=[], **kwargs):
         args = [str(self.pk)] + args
@@ -553,6 +538,18 @@ class Deploy(AuditedModel):
                                   'description': description,
                                   'current': current_step,
                                   'total': total_steps})
+
+
+    @contextmanager
+    def start(self, snapshot):
+        self.snapshot = snapshot
+        self.snapshot.run_build_plugins(self)
+        self.snapshot.run_pre_deploy_plugins(self)
+        yield
+        self.snapshot.run_post_deploy_plugins(self)
+        utils.delete_path(self.snapshot.path)
+        if self.existing_snapshot:
+            utils.delete_path(self.existing_snapshot.path)
 
 
 @receiver(signals.sync_source)
