@@ -123,3 +123,11 @@ class TestEtcdConfigManager(TestCase):
     def test_delete(self):
         self.cm.delete('/key')
         self.etcd_client.delete.assert_called_with('/key')
+
+    @patch('etcd.Client')
+    def test_init(self, client):
+        cm = config_managers.EtcdConfigManager('1.1.1.1:22')
+        client.assert_called_with(host='1.1.1.1', port=22)
+
+        with assert_raises(ValueError):
+            cm = config_managers.EtcdConfigManager('')

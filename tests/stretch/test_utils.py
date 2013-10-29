@@ -104,9 +104,11 @@ def test_map_groups(mock_time):
 def test_group_by_attr():
     m1 = Mock(spec=['a'], a='foo')
     m2 = Mock(spec=['a'], a='bar')
-    group = utils.group_by_attr([m1, m2], 'a')
+    m3 = Mock(spec=['b'], b='bar')
+    group = utils.group_by_attr([m1, m2, m3], 'a')
     eq_(group['foo'], [m1])
     eq_(group['bar'], [m2])
+    eq_(group[None], [m3])
 
 
 def test_path_contains():

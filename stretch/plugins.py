@@ -108,7 +108,7 @@ class MigrationsPlugin(Plugin):
         self.migrate(deploy, pre_deploy=False)
 
     def migrate(self, deploy, pre_deploy):
-        if deploy.is_from_release():
+        if deploy.release:
             # Standard deploy
             # Get releases
             release = deploy.release

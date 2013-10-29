@@ -7,17 +7,20 @@ import jsonfield
 import uuidfield
 from contextlib import contextmanager
 from django.db import models
+from django.db.models import signals as model_signals
 from django.dispatch import receiver
 from django.core.validators import RegexValidator
 from django.conf import settings
 from celery import current_task, group
 from celery.contrib.methods import task
 
-from stretch import signals, sources, utils, backends, parser, exceptions
+from stretch import (signals, sources, utils, backends, parser, exceptions,
+                     config_managers)
 from stretch.salt_api import salt_client, wheel_client, runner_client
 
 
 log = logging.getLogger('stretch')
+config_manager = config_managers.get_config_manager()
 alphanumeric = RegexValidator(r'^[a-zA-Z0-9_\-]*$',
                               'Only alphanumeric characters, underscores, and '
                               'hyphens are allowed.')
@@ -57,6 +60,11 @@ class System(AuditedModel):
             raise exceptions.UndefinedSource()
         return system_sources[0]
 
+    @property
+    @utils.memoized
+    def config_manager(self):
+        return config_managers.get_config_manager()
+
 
 class Environment(AuditedModel):
     name = models.TextField(validators=[alphanumeric])
@@ -71,7 +79,7 @@ class Environment(AuditedModel):
     def backend(self):
         return backends.get_backend(self)
 
-    # TODO: make tasks non-concurrent
+    # TODO: make tasks non-concurrent, (celery buckets)
     @task
     def deploy(self, obj):
         log.info('Deploying %s to %s/%s' % (obj, self.system.name, self.name))
@@ -95,6 +103,7 @@ class Environment(AuditedModel):
                 self.deploy_to_instances(snapshot, nodes=snapshot.nodes)
             else:
                 self.deploy_to_instances(snapshot, sha=obj.sha)
+
         self.save()
 
     @task
@@ -108,7 +117,7 @@ class Environment(AuditedModel):
         node_names = [node.name for node in nodes]
         for instance in self.instances.all():
             if instance.node.name in node_names:
-                instance.reload(remember=False)
+                instance.reload()
 
     def save_deploy(self, deploy_task, release=None):
         deploy = Deploy.create(
@@ -120,34 +129,31 @@ class Environment(AuditedModel):
         deploy.save()
         return deploy
 
-    def check_release(self, obj):
-        if hasattr(obj, 'sha'):
-            return True
-        elif hasattr(obj, 'pull'):
-            return False
-        else:
-            raise TypeError('cannot deploy object "%s"' % obj)
-
     def deploy_to_instances(self, snapshot, sha=None, nodes=None):
 
-        def check(self, instance, is_finished):
-            deactivated = instance.deactivate()
+        def check(self, instance, is_finished, deactivated):
 
             def is_finished_job():
+                """
+                Pending: False
+                Done:    !False (result)
+                """
                 result = is_finished()
                 if result != False and deactivated:
-                    instance.activate()
+                    instance.host.activate()
                 return result
 
             return is_finished_job
 
         def deploy(instance):
             if sha:
-                return check(instance, instance.deploy(sha=sha))
+                deactivated = instance.host.deactivate()
+                return check(instance, instance.deploy(sha=sha), deactivated)
             elif nodes:
                 for node in nodes:
                     if node.name == instance.node.name and node.app_path:
-                        return check(instance.deploy(app_path=node.app_path))
+                        deactivated = instance.host.deactivate()
+                        return check(instance, instance.deploy(app_path=node.app_path), deactivated)
 
             return None
 
@@ -162,6 +168,20 @@ class Environment(AuditedModel):
 
         groups = utils.group_by_attr(self.instances.all(), 'group')
         results = utils.map_groups(callback, groups, batch_size)
+
+    @classmethod
+    def post_save(cls, sender, env, created, **kwargs):
+        if created:
+            env.system.config_manager.add_env(env)
+        env.system.config_manager.sync_env_config(env)
+
+    @classmethod
+    def pre_delete(cls, sender, env, **kwargs):
+        env.system.config_manager.remove_env(env)
+
+
+model_signals.post_save.connect(Environment.post_save, sender=Environment)
+model_signals.pre_delete.connect(Environment.pre_delete, sender=Environment)
 
 
 class Release(AuditedModel):
@@ -221,16 +241,19 @@ class Release(AuditedModel):
         return os.path.join(settings.STRETCH_DATA_DIR, 'releases', self.sha)
 
 
+class Port(AuditedModel):
+    node = models.ForeignKey('Node', related_name='ports')
+    name = models.TextField(validators=[alphanumeric])
+    number = models.IntegerField()
+
+
 class Node(AuditedModel):
     name = models.TextField(validators=[alphanumeric])
     system = models.ForeignKey('System', related_name='nodes')
-    ports = jsonfield.JSONField(default={})
     unique_together = ('system', 'name')
 
 
 class Instance(AuditedModel):
-    # UUIDs are used for instances because the instance ids are included in
-    # the application context
     id = uuidfield.UUIDField(auto=True, primary_key=True)
 
     environment = models.ForeignKey('Environment', related_name='instances')
@@ -238,85 +261,32 @@ class Instance(AuditedModel):
     node = models.ForeignKey('Node', related_name='instances')
 
     @classmethod
-    def create(cls, *args, **kwargs):
-        instance = cls(*args, **kwargs)
+    def create(cls, env, host, node):
+        instance = cls(environment=env, host=host, node=node)
+        instance.host.add_instance(instance)
         instance.save()
 
-        # TODO: deal with port conflicts
-        """instance_ports = []
-        for port in instance.node.ports:
-            instance_ports.append((port, port))
-            binding = PortBinding(source=port, destination=port,
-                                  instance=instance)
-            binding.save()"""
+    def reload(self):
+        return self.host.reload_instance(self)
 
-        # TODO: what if deploying app_path from source? app_paths need to be
-        # cached with the environment some way on fs or db.
-        if instance.environment.current_release:
-            instance.deploy(sha=instance.environment.current_release.sha)
-        instance.call('stretch.add_instance', [str(instance.node.pk),
-                                               str(instance.environment.pk)])
-        return instance
+    def restart(self):
+        return self.host.restart_instance(self)
 
-    def delete(self):
-        self.call('stretch.remove_instance')
-        super(Instance, self).delete()
+    def deploy(self, sha=None, app_path=None):
+        return self.host.deploy_instance(self, sha, app_path)
 
-    @property
-    def pending_jobs(self):
-        if not hasattr(self, '_pending_jobs'):
-            self._pending_jobs = []
-        return self._pending_jobs
+    @classmethod
+    def post_save(cls, sender, instance, created, **kwargs):
+        instance.environment.system.config_manager.add_instance(instance)
 
-    def reload(self, **kwargs):
-        self.call('stretch.reload', **kwargs)
+    @classmethod
+    def pre_delete(cls, sender, instance, **kwargs):
+        instance.environment.system.config_manager.remove_instance(instance)
+        instance.host.remove_instance(instance)
 
-    def restart(self, **kwargs):
-        self.call('stretch.restart', **kwargs)
 
-    def deploy(self, sha=None, app_path=None, **kwargs):
-        env = {'id': str(self.environment.pk), 'name': self.environment.name}
-        node = {'id': str(self.node.pk), 'name': self.node.name}
-        self.call('stretch.deploy', [str(self.environment.system.pk), env,
-                                     node, self.node.ports,
-                                     settings.STRETCH_REGISTRY_URL, sha,
-                                     app_path], **kwargs)
-
-    def activate(self):
-        pass
-        #if self.host.group:
-        #    self.host.group.activate(self.host)
-
-    def deactivate(self):
-        host_instances = self.host.instances.all()
-        if len(host_instances) > 1 and instance in host_instances:
-            self.remove_from_load_balancer()
-            return True
-        return False
-        #if self.host.group:
-        #    self.host.group.deactivate(self.host)
-
-    def call(self, cmd, args=[], **kwargs):
-        args = [str(self.pk)] + args
-        log.debug('instance call (%s, %s, %s)' % (self.host.fqdn, cmd, args))
-        jid = salt_client().cmd_async(self.host.fqdn, cmd, args, **kwargs)
-
-        if kwargs.pop('remember', True):
-            self.pending_jobs.append(jid)
-
-        return jid
-
-    def jobs_finished(self):
-        # TODO: log job results
-        active_jobs = runner_client().cmd('jobs.active', []).keys()
-
-        for jid in self.pending_jobs:
-            if jid in active_jobs:
-                return False
-            else:
-                self.pending_jobs.remove(jid)
-
-        return True
+model_signals.post_save.connect(Instance.post_save, sender=Instance)
+model_signals.pre_delete.connect(Instance.pre_delete, sender=Instance)
 
 
 class LoadBalancer(models.Model):
@@ -354,7 +324,6 @@ class LoadBalancer(models.Model):
 
 
 class Host(AuditedModel):
-    # TODO: .name defaults to .fqdn
     fqdn = models.TextField(unique=True)
     hostname = models.TextField()
     domain_name = models.TextField(null=True)
@@ -364,8 +333,8 @@ class Host(AuditedModel):
 
     @classmethod
     def create(cls, env, group=None):
+        # No group means unmanaged host
         domain_name = env.system.domain_name
-
         hostname = (utils.generate_random_hex(8) if group
                     else fqdn.replace(domain_name, ''))
         fqdn = '%s.%s' % (hostname, domain_name) if domain_name else hostname
@@ -374,6 +343,7 @@ class Host(AuditedModel):
                    environment=env, group=group)
 
         if group:
+            # Managed host
             if not env.backend:
                 raise exceptions.UndefinedBackend()
             host.address = env.backend.create_host(host)
@@ -382,18 +352,13 @@ class Host(AuditedModel):
         host.save()
 
         if group:
-            Instance.create(environment=host.environment, host=host,
-                            node=host.group.node)
+            # Managed host
+            host.create_instance(group.node)
 
         return host
 
-    def delete(self, managed=False):
-        self.delete_key()
-        if self.group or managed:
-            if not self.environment.backend:
-                raise exceptions.UndefinedBackend()
-            self.environment.backend.delete_host(self)
-        super(Host, self).delete()
+    def create_instance(node):
+        Instance.create(self.environment, self, node)
 
     def finish_provisioning(self):
         self.accept_key()
@@ -434,12 +399,74 @@ class Host(AuditedModel):
                 log.debug(result)
                 break
 
-    def load_config(self, node_configs):
-        self.call('stretch.load_config', [str(self.environment.pk),
-                                          node_configs])
+    def activate(self):
+        self.group.activate_host(self)
+
+    def deactivate(self):
+        deactivated = False
+        if self.group and len(self.instances.count()) > 1:
+            self.group.deactivate_host(self)
+            deactivated = True
+        return deactivated
+
+    def add_instance(self, instance):
+        utils.wait(self.instance_call(instance, 'stretch.add_instance'))
+
+    def remove_instance(self, instance):
+        utils.wait(self.instance_call(instance, 'stretch.remove_instance'))
+
+    def reload_instance(self, instance):
+        return self.instance_call(instance, 'stretch.reload')
+
+    def restart_instance(self, instance):
+        return self.instance_call(instance, 'stretch.restart')
+
+    def deploy_instance(self, instance, sha=None, app_path=None):
+        env = {'id': str(self.environment.pk), 'name': self.environment.name}
+        node = {'id': str(self.node.pk), 'name': self.node.name, 'ports': []}
+
+        for port in instance.node.ports.all():
+            node['ports'][port.name] = port.number
+
+        args = [str(self.environment.system.pk), env, node,
+                settings.STRETCH_REGISTRY_URL, sha, app_path]
+        return self.instance_call(instance, 'stretch.deploy', args)
+
+    def instance_call(self, instance, cmd, *args, **kwargs):
+        args = [str(instance.pk)] + args
+        jid = salt_client().cmd_async(self.fqdn, cmd, args, **kwargs)
+
+        def is_finished():
+            job = runner_client().cmd('jobs.lookup_jid', [jid])
+            if job:
+                return job.values()[0]
+            else:
+                return False
+
+        return is_finished
 
     def call(self, *args, **kwargs):
         return salt_client().cmd(self.fqdn, *args, **kwargs)
+
+    @classmethod
+    def post_save(cls, sender, host, created, **kwargs):
+        if created and not host.group:
+            host.environment.system.config_manager.add_managed_host(host)
+
+    @classmethod
+    def pre_delete(cls, sender, host, **kwargs):
+        host.instances.all().delete()
+        host.delete_key()
+        if host.group:
+            if not host.environment.backend:
+                raise exceptions.UndefinedBackend()
+            host.environment.backend.delete_host(host)
+        else:
+            host.environment.system.config_manager.remove_managed_host(host)
+
+
+model_signals.post_save.connect(Host.post_save, sender=Host)
+model_signals.pre_delete.connect(Host.pre_delete, sender=Host)
 
 
 class Group(AuditedModel):
@@ -451,37 +478,33 @@ class Group(AuditedModel):
     load_balancer = models.OneToOneField('LoadBalancer', null=True)
     unique_together = ('environment', 'name')
 
-    def activate(self, host):
+    def activate_host(self, host):
         if self.load_balancer:
             self.load_balancer.activate_host(host)
 
-    def deactivate(self, host):
+    def deactivate_host(self, host):
         if self.load_balancer:
             self.load_balancer.deactivate_host(host)
 
     def scale_up(self, amount):
         self.check_valid_amount(self.hosts.count() + amount)
-        group(self.create_host.s() for _ in xrange(amount))().get()
-        self.environment.update_config()
+        group(self._create_host.s() for _ in xrange(amount))().get()
 
     def scale_down(self, amount):
         self.check_valid_amount(self.hosts.count() - amount)
-
         hosts = self.hosts.all()[0:amount]
-
-        for host in hosts:
-            host.group = None
-            host.save()
-
-        self.environment.update_config()
-        group(self.delete_host.s(host.pk) for host in hosts)().get()
+        group(self._delete_host.s(host.pk) for host in hosts)().get()
 
     def create_load_balancer(self, port, host_port, protocol):
-        if not self.load_balancer and self.hosts.count() > 0:
+        if self.hosts.count() > 0:
+            raise Exception('no hosts in group')
+        if not self.load_balancer:
             self.load_balancer = LoadBalancer(port=port, host_port=host_port,
                                               protocol=protocol)
             self.load_balancer.activate_with_hosts(self.hosts.all())
             self.load_balancer.save()
+        else:
+            raise Exception('group already has a load balancer')
 
     def scale_to(self, amount):
         relative_amount = amount - self.hosts.count()
@@ -499,19 +522,17 @@ class Group(AuditedModel):
             raise Exception('invalid scaling amount')
 
     @task
-    def create_host(self):
+    def _create_host(self):
         host = Host.create(self.environment, self)
         if self.load_balancer:
             self.load_balancer.add_host(host)
 
     @task
-    def delete_host(self, host_id):
+    def _delete_host(self, host_id):
         host = Host.objects.get(pk=host_id)
         if self.load_balancer:
             self.load_balancer.remove_host(host)
-        host.delete(True)
-
-    # TODO: delete chaining for host, group, instance, env, system
+        host.delete()
 
 
 class Deploy(AuditedModel):
@@ -528,17 +549,6 @@ class Deploy(AuditedModel):
         deploy.snapshot = None
         deploy.existing_snapshot = None
         return deploy
-
-    def is_from_release(self):
-        return bool(self.release)
-
-    def update_status(current_step, description):
-        log.info(description)
-        current_task.update_state(state='PROGRESS', meta={
-                                  'description': description,
-                                  'current': current_step,
-                                  'total': total_steps})
-
 
     @contextmanager
     def start(self, snapshot):

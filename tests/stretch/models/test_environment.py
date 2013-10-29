@@ -42,14 +42,6 @@ class TestEnvironment(TestCase):
         )
         deploy.save.assert_called_with()
 
-    def test_check_release(self):
-        release = testutils.mock_attr(sha='sha')
-        source = Mock(spec=['pull'], pull=Mock())
-        assert self.env.check_release(release)
-        assert not self.env.check_release(source)
-        with assert_raises(TypeError):
-            self.env.check_release('')
-
     @patch('stretch.models.Deploy')
     @patch('stretch.models.Environment.instances')
     def test_autoload(self, instances, mock_deploy):
@@ -63,7 +55,7 @@ class TestEnvironment(TestCase):
         instances.all.return_value = [foo_instance, bar_instance]
         self.env.autoload(source, nodes)
 
-        foo_instance.reload.assert_called_with(remember=False)
+        foo_instance.reload.assert_called_with()
         assert not bar_instance.reload.called
         source.run_build_plugins.assert_called_with(deploy, nodes)
         mock_deploy.create.assert_called_with(environment=self.env)
@@ -119,49 +111,3 @@ class TestEnvironment(TestCase):
         self.env.save.assert_called_with()
         deploy.start.assert_called_with(snapshot)
         eq_(deploy.existing_snapshot, existing_snapshot)
-
-    """
-    def test_update_config(self):
-        env = models.Environment(name='env')
-        env.update_config()
-        # assert all instances updates
-
-    def test_autoload(self):
-        pass
-
-        env = models.Environment(name='env')
-        env.update_config()
-        # assert all instances updates
-
-    @patch('celery.current_task', Mock())
-    def test_deploy_release(self):
-        system = models.System(name='system')
-        system.save()
-        env = models.Environment(name='env', system=system)
-        env.using_source = True
-        env.save()
-
-        release = models.Release(name='rel', sha='abc', system=system)
-        release.save()
-        env.deploy(release)
-
-        deploy = models.Deploy.objects.get()
-        eq_(deploy.existing_release, None)
-        eq_(deploy.release, release)
-        #assert not env.using_source
-        #eq_(env.current_release, release)
-
-    def test_deploy_source(self):
-        pass
-
-        env = models.Environment(name='env')
-        env.using_source = False
-        env.current_release = Mock()
-        source = Mock()
-        env.deploy(source)
-        assert env.using_source
-        eq_(env.current_release, None)
-
-
-    def test_map_instances(self):
-        pass # plenty of assertions """

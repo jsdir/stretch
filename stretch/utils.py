@@ -126,7 +126,7 @@ def path_contains(path, file_path):
 def group_by_attr(items, attr_name):
     group = {}
     for item in items:
-        attr = getattr(item, attr_name)
+        attr = getattr(item, attr_name, None)
         if attr in group:
             group[attr].append(item)
         else:
@@ -164,6 +164,14 @@ def map_groups(callback, groups, batch_size, on_finish=None, interval=1.0):
                     pending[group].pop(item, None)
 
     return results
+
+
+def wait(is_finished, interval=0.5):
+    while True:
+        result = is_finished()
+        if result != False:
+            return result
+        time.sleep(interval)
 
 
 def generate_memorable_name():  # pragma: no cover
