@@ -6,7 +6,9 @@ omit =
     stretch/urls.py
     stretch/wsgi.py
 
-source = stretch
+source =
+    stretch
+    lib
 branch = 1
 
 [report]

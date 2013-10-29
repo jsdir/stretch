@@ -410,7 +410,8 @@ class Host(AuditedModel):
         return deactivated
 
     def add_instance(self, instance):
-        utils.wait(self.instance_call(instance, 'stretch.add_instance'))
+        utils.wait(self.instance_call(instance, 'stretch.add_instance',
+            [str(instance.node.pk), str(instance.environment.pk)]))
 
     def remove_instance(self, instance):
         utils.wait(self.instance_call(instance, 'stretch.remove_instance'))

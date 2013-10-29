@@ -108,15 +108,6 @@ def instance(func):
     return method
 
 
-def load_config(env_id, node_configs):
-    env_dir = os.path.join(agent_dir, str(env_id))
-    for node_id, config in node_configs.iteritems():
-        config_path = os.path.join(env_dir, node_id, 'config')
-        _makedirs(config_path)
-        with open(os.path.join(config_path, 'config.json'), 'w') as f:
-            json.dump(config, f)
-
-
 @instance
 def add_instance(instance, node_id, env_id):
     instance.data = {'node_id': str(node_id), 'env_id': str(env_id)}
@@ -129,16 +120,6 @@ def remove_instance(instance):
 
 
 @instance
-def start(instance):
-    instance.start()
-
-
-@instance
-def stop(instance):
-    instance.stop()
-
-
-@instance
 def reload(instance):
     instance.reload()
 
@@ -146,13 +127,6 @@ def reload(instance):
 @instance
 def restart(instance):
     instance.restart()
-
-
-@contextmanager
-def _make_temp_dir():
-    temp_dir = tempfile.mkdtemp()
-    yield temp_dir
-    shutil.rmtree(temp_dir)
 
 
 @instance
@@ -210,6 +184,18 @@ def deploy(instance, system_id, env, node, ports, registry_url, sha=None,
     instance.start()
 
 
+def main():
+    for instance in db.instances.find(fields=['id']):
+        Instance(instance['id']).start()
+
+
+@contextmanager
+def _make_temp_dir():
+    temp_dir = tempfile.mkdtemp()
+    yield temp_dir
+    shutil.rmtree(temp_dir)
+
+
 def _makedirs(path):
     try:
         os.makedirs(path)
@@ -233,5 +219,4 @@ def _clear_path(path):
 # Until Docker 0.7 (or production-level process monitoring), this hack will
 # automatically start containers at system startup for now.
 if __name__ == '__main__':
-    for instance in db.instances.find(fields=['id']):
-        Instance(instance['id']).start()
+    main()
