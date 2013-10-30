@@ -73,6 +73,7 @@ class Environment(AuditedModel):
     current_release = models.ForeignKey('Release', null=True)
     using_source = models.BooleanField(default=False)
     config = jsonfield.JSONField(default={})
+    app_paths = jsonfield.JSONField(default={})
 
     @property
     @utils.memoized
@@ -98,6 +99,9 @@ class Environment(AuditedModel):
         snapshot = obj.get_snapshot()
         with deploy.start(snapshot):
             if self.using_source:
+                # TODO: if celery is used for deploying instances, app_paths
+                # will have to be saved in order to persist across processes
+                self.app_paths = snapshot.get_app_paths()
                 # Build new images specifically for source
                 snapshot.build_and_push(None, self.system)
                 self.deploy_to_instances(snapshot, nodes=snapshot.nodes)
@@ -153,7 +157,7 @@ class Environment(AuditedModel):
                 for node in nodes:
                     if node.name == instance.node.name and node.app_path:
                         deactivated = instance.host.deactivate()
-                        return check(instance, instance.deploy(app_path=node.app_path), deactivated)
+                        return check(instance, instance.deploy(), deactivated)
 
             return None
 
@@ -266,14 +270,36 @@ class Instance(AuditedModel):
         instance.host.add_instance(instance)
         instance.save()
 
+    def get_deploy_options(self, sha=None):
+        if sha:
+            app_path = None
+        else:
+            app_path = self.environment.app_paths[self.node.name]
+
+        system = self.environment.system
+        ports = dict([(p.name, p.number) for p in self.node.ports.all()])
+
+        return {
+            'system_id': str(self.environment.system.pk),
+            'env_id': str(self.environment.pk),
+            'env_name': self.environment.name,
+            'node_id': str(self.node.pk),
+            'node_name': self.node.name,
+            'node_ports': ports,
+            'node_app_path': app_path,
+            'registry_url': settings.STRETCH_REGISTRY_URL,
+            'instance_key': system.config_manager.get_instance_key(self),
+            'sha': sha
+        }
+
     def reload(self):
         return self.host.reload_instance(self)
 
     def restart(self):
         return self.host.restart_instance(self)
 
-    def deploy(self, sha=None, app_path=None):
-        return self.host.deploy_instance(self, sha, app_path)
+    def deploy(self, sha=None):
+        return self.host.deploy_instance(self, sha)
 
     @classmethod
     def post_save(cls, sender, instance, created, **kwargs):
@@ -411,7 +437,7 @@ class Host(AuditedModel):
 
     def add_instance(self, instance):
         utils.wait(self.instance_call(instance, 'stretch.add_instance',
-            [str(instance.node.pk), str(instance.environment.pk)]))
+                                      [instance.get_deploy_options()]))
 
     def remove_instance(self, instance):
         utils.wait(self.instance_call(instance, 'stretch.remove_instance'))
@@ -422,16 +448,9 @@ class Host(AuditedModel):
     def restart_instance(self, instance):
         return self.instance_call(instance, 'stretch.restart')
 
-    def deploy_instance(self, instance, sha=None, app_path=None):
-        env = {'id': str(self.environment.pk), 'name': self.environment.name}
-        node = {'id': str(self.node.pk), 'name': self.node.name, 'ports': []}
-
-        for port in instance.node.ports.all():
-            node['ports'][port.name] = port.number
-
-        args = [str(self.environment.system.pk), env, node,
-                settings.STRETCH_REGISTRY_URL, sha, app_path]
-        return self.instance_call(instance, 'stretch.deploy', args)
+    def deploy_instance(self, instance, sha=None):
+        return self.instance_call(instance, 'stretch.deploy',
+                                  [instance.get_deploy_options(sha)])
 
     def instance_call(self, instance, cmd, *args, **kwargs):
         args = [str(instance.pk)] + args

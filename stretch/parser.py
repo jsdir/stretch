@@ -115,6 +115,13 @@ class Snapshot(object):
     def copy_to_buffer(self, path):
         dir_util.copy_tree(self.path, path)
 
+    def get_app_paths(self):
+        app_paths = {}
+        for node in self.nodes:
+            if node.app_path:
+                app_paths[node.name] = node.app_path
+        return app_paths
+
     @contextmanager
     def mount_templates(self, path):
         """
