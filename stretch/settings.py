@@ -184,6 +184,13 @@ LOGGING = {
             'backupCount': 2,
             'formatter': 'standard',
         },
+        'celery': {
+            'level': 'DEBUG',
+            'class': 'logging.handlers.RotatingFileHandler',
+            'filename': 'log/celery.log',
+            'formatter': 'standard',
+            'maxBytes': 1024 * 1024 * 100,  # 100 mb
+        },
         'console':{
             'level':'INFO',
             'class':'logging.StreamHandler',
@@ -192,7 +199,7 @@ LOGGING = {
     },
     'loggers': {
         'django': {
-            'handlers':['console'],
+            'handlers': ['console'],
             'propagate': True,
             'level':'WARN',
         },
@@ -200,8 +207,14 @@ LOGGING = {
             'handlers': ['console', 'logfile'],
             'level': 'DEBUG',
         },
+        'celery': {
+            'handlers': ['celery'],
+            'level': 'DEBUG',
+        },
     }
 }
+
+CELERY_HIJACK_ROOT_LOGGER = False
 
 REST_FRAMEWORK = {
     'PAGINATE_BY': 10,
