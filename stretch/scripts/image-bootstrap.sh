@@ -5,8 +5,8 @@ export DEBIAN_FRONTEND=noninteractive
 apt-key adv --keyserver hkp://keyserver.ubuntu.com:80 --recv 7F0CEB10
 echo 'deb http://downloads-distro.mongodb.org/repo/ubuntu-upstart dist 10gen' | sudo tee /etc/apt/sources.list.d/mongodb.list
 apt-get install -y curl wget ufw rinetd linux-image-extra-`uname -r`
-curl -L http://get.docker.io | sh
-curl -L http://bootstrap.saltstack.org | sh
+curl -L http://get.docker.io > /tmp/docker.sh && sh /tmp/docker.sh
+curl -L http://bootstrap.saltstack.org > /tmp/salt.sh && sh /tmp/salt.sh
 
 # TODO: etcd clustering 5-9 nodes and rest clients
 # !! replace rinetd with supervisor
