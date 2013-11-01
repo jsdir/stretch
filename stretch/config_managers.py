@@ -1,7 +1,12 @@
 import etcd
 import collections
+import logging
+from django.conf import settings
 
 from stretch import utils
+
+
+log = logging.getLogger('stretch')
 
 
 class ConfigManager(object):
@@ -59,25 +64,36 @@ class ConfigManager(object):
         raise NotImplementedError
 
 
-class EtcdConfigManager(object):
+class EtcdConfigManager(ConfigManager):
     def __init__(self, address):
         try:
             host, port = address.split(':')
         except ValueError:
             raise ValueError('incorrectly formatted address "%s"; expected '
                              '"ip:port"' % address)
-        self.etcd_client = etcd.Client(host=host, port=int(port))
+        self.etcd_client = etcd.Etcd(host=host, port=int(port))
 
     def set(self, key, value):
-        self.etcd_client.set(key, value)
+        # TODO: Remove lstrip with etcd-py 0.0.6
+        self.etcd_client.set(key.lstrip('/'), value)
 
     def get(self, key):
         return self.etcd_client.get(key).value
 
     def delete(self, key):
-        self.etcd_client.delete(key)
+        try:
+            self.etcd_client.delete(key)
+            return
+        except etcd.EtcdError:
+            pass
+
+        try:
+            for k, v in self.etcd_client.get_recursive(key).iteritems():
+                self.etcd_client.delete(k)
+        except ValueError as e:
+            log.info(e.message)
 
 
 @utils.memoized
 def get_config_manager():
-    return EtcdConfigManager('localhost:4001')
+    return EtcdConfigManager(settings.ETCD_HOST)

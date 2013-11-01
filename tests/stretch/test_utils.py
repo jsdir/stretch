@@ -118,6 +118,11 @@ def test_path_contains():
     assert not utils.path_contains('/a/b', '/b/b')
 
 
+def test_render_template_to_file():
+    pass
+    # utils.render_template_to_file('/a/b', '/a/c', contexts=[])
+
+
 # Test start to finish of all 4 source to backend transfer methods,
 # - if signals are triggered
 # - autoloading environments, systems, get_sources, get_backends

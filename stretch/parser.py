@@ -20,6 +20,8 @@ docker_client = docker.Client(base_url='unix://var/run/docker.sock',
                               version='1.4')
 
 
+# TODO: container build errors need to stop build, output from builds needs to
+# be streamed along with plugin output.
 class Snapshot(object):
     def __init__(self, path):
         self.path = path
@@ -283,7 +285,7 @@ class Container(object):
                 self.tag = 'stretch_base/sys%s' % system.pk
             elif release:
                 # Node container
-                self.tag = '%s/sys%s/%s' % (settings.STRETCH_REGISTRY_URL,
+                self.tag = '%s/sys%s/%s' % (settings.STRETCH_REGISTRY_PUBLIC_URL,
                                             system.pk, node.name)
             else:
                 # Local container

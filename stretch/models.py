@@ -1,4 +1,5 @@
 import os
+import math
 import logging
 import tarfile
 import json
@@ -135,7 +136,7 @@ class Environment(AuditedModel):
 
     def deploy_to_instances(self, snapshot, sha=None, nodes=None):
 
-        def check(self, instance, is_finished, deactivated):
+        def check(instance, is_finished, deactivated):
 
             def is_finished_job():
                 """
@@ -167,20 +168,28 @@ class Environment(AuditedModel):
             self.map_instances(deploy)
 
     def map_instances(self, callback):
-        batch_size = min(self.instances.count() / 2,
+        batch_size = min(int(math.ceil(self.instances.count() / 2.0)),
                          settings.STRETCH_BATCH_SIZE)
 
-        groups = utils.group_by_attr(self.instances.all(), 'group')
+        instances = []
+        for instance in self.instances.all():
+            instance.group = instance.host.group
+            instances.append(instance)
+
+        groups = utils.group_by_attr(instances, 'group')
+        log.info('Mapping deploy to groups: %s @ %s' % (groups, batch_size))
         results = utils.map_groups(callback, groups, batch_size)
 
     @classmethod
-    def post_save(cls, sender, env, created, **kwargs):
+    def post_save(cls, sender, instance, created, **kwargs):
+        env = instance
         if created:
             env.system.config_manager.add_env(env)
         env.system.config_manager.sync_env_config(env)
 
     @classmethod
-    def pre_delete(cls, sender, env, **kwargs):
+    def pre_delete(cls, sender, instance, **kwargs):
+        env = instance
         env.system.config_manager.remove_env(env)
 
 
@@ -203,7 +212,7 @@ class Release(AuditedModel):
         )
 
         # Copy to temporary directory
-        tmp_path = utils.tmp_dir(path)
+        tmp_path = utils.temp_dir(path)
 
         # Create snapshot
         snapshot = parser.Snapshot(tmp_path)
@@ -219,9 +228,6 @@ class Release(AuditedModel):
         tar_file.add(tmp_path, '/')
         tar_file.close()
 
-        # Dump release configuration
-        snapshot.save_config(os.path.join(release_dir, 'config.json'))
-
         # Build docker images
         snapshot.build_and_push(release, system)
 
@@ -235,7 +241,7 @@ class Release(AuditedModel):
 
     def get_snapshot(self):
         tar_path = os.path.join(self.get_data_dir(), 'snapshot.tar.gz')
-        tmp_path = utils.tmp_dir()
+        tmp_path = utils.temp_dir()
         tar_file = tarfile.open(tar_path)
         tar_file.extractall(tmp_path)
         tar_file.close()
@@ -267,8 +273,8 @@ class Instance(AuditedModel):
     @classmethod
     def create(cls, env, host, node):
         instance = cls(environment=env, host=host, node=node)
-        instance.host.add_instance(instance)
         instance.save()
+        instance.host.add_instance(instance)
 
     def get_deploy_options(self, sha=None):
         if sha:
@@ -287,7 +293,7 @@ class Instance(AuditedModel):
             'node_name': self.node.name,
             'node_ports': ports,
             'node_app_path': app_path,
-            'registry_url': settings.STRETCH_REGISTRY_URL,
+            'registry_url': settings.STRETCH_REGISTRY_PRIVATE_URL,
             'instance_key': system.config_manager.get_instance_key(self),
             'sha': sha
         }
@@ -375,15 +381,17 @@ class Host(AuditedModel):
             host.address = env.backend.create_host(host)
 
         host.finish_provisioning()
+        log.info('Saving host...')
         host.save()
 
         if group:
             # Managed host
+            log.info('Creating new instance for host...')
             host.create_instance(group.node)
 
         return host
 
-    def create_instance(node):
+    def create_instance(self, node):
         Instance.create(self.environment, self, node)
 
     def finish_provisioning(self):
@@ -430,14 +438,22 @@ class Host(AuditedModel):
 
     def deactivate(self):
         deactivated = False
-        if self.group and len(self.instances.count()) > 1:
+        if self.group and self.instances.count() > 1:
             self.group.deactivate_host(self)
             deactivated = True
         return deactivated
 
     def add_instance(self, instance):
+        release = self.environment.current_release
+        if not release and not self.environment.using_source:
+            raise Exception('environment has no current release')
+            # TODO: be able to add instance that wait for a deploy instead of
+            # having to use a deploy at creation time
+        sha = None
+        if release:
+            sha = release.sha
         utils.wait(self.instance_call(instance, 'stretch.add_instance',
-                                      [instance.get_deploy_options()]))
+                                      instance.get_deploy_options(sha)))
 
     def remove_instance(self, instance):
         utils.wait(self.instance_call(instance, 'stretch.remove_instance'))
@@ -450,17 +466,27 @@ class Host(AuditedModel):
 
     def deploy_instance(self, instance, sha=None):
         return self.instance_call(instance, 'stretch.deploy',
-                                  [instance.get_deploy_options(sha)])
+                                  instance.get_deploy_options(sha))
 
     def instance_call(self, instance, cmd, *args, **kwargs):
-        args = [str(instance.pk)] + args
+        args = [str(instance.pk)] + list(args)
+        log.info('Calling instance -> %s (%s, %s)' % (self.fqdn, cmd, args))
         jid = salt_client().cmd_async(self.fqdn, cmd, args, **kwargs)
 
         def is_finished():
-            job = runner_client().cmd('jobs.lookup_jid', [jid])
+            #running_jids = runner_client().cmd('jobs.active', []).keys()
+            #if jid in running_jids:
+            #    log.info('Waiting for job [%s]...' % jid)
+            #    return False
+            #else:
+            job = salt_client().get_cache_returns(jid)
             if job:
-                return job.values()[0]
+                result = job.values()[0]
+                log.info('Job [%s] finished' % jid)
+                log.debug(' - result: %s' % result)
+                return result
             else:
+                log.info('Waiting for job [%s]...' % jid)
                 return False
 
         return is_finished
@@ -469,12 +495,15 @@ class Host(AuditedModel):
         return salt_client().cmd(self.fqdn, *args, **kwargs)
 
     @classmethod
-    def post_save(cls, sender, host, created, **kwargs):
+    def post_save(cls, sender, instance, created, **kwargs):
+        host = instance
         if created and not host.group:
+            log.info('Adding managed host to config manager...')
             host.environment.system.config_manager.add_managed_host(host)
 
     @classmethod
-    def pre_delete(cls, sender, host, **kwargs):
+    def pre_delete(cls, sender, instance, **kwargs):
+        host = instance
         host.instances.all().delete()
         host.delete_key()
         if host.group:

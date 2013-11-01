@@ -166,7 +166,7 @@ def map_groups(callback, groups, batch_size, on_finish=None, interval=1.0):
     return results
 
 
-def wait(is_finished, interval=0.5):
+def wait(is_finished, interval=2.0):
     while True:
         result = is_finished()
         if result != False:

@@ -36,6 +36,20 @@ echo "grains: {'roles': ['stretch-host']}" >> /etc/salt/minion
 echo "log_level_logfile: debug" >> /etc/salt/minion
 # TODO: actually enforce state on stretch-host and package the state with stretch
 
+# TODO: etcd clustering
+# Configure etcd
+#cat >> /etc/supervisor/supervisord.conf << EOL
+#[program:etcd]
+#command=/usr/local/bin/etcd -C {{ etcd_host }} -d /var/etcd-node
+#EOL
+
+#supervisorctl reload
+#supervisorctl restart etcd
+
+# Use port forwarding until clustering
+echo "127.0.0.1 4001 {{ etcd_host_address }} {{ etcd_host_port }}" >> /etc/rinetd.conf
+service rinetd restart
+
 # Restart salt-minion
 service salt-minion restart
 

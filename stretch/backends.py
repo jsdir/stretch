@@ -179,13 +179,14 @@ class RackspaceBackend(Backend):
 
         script_dir = os.path.join(os.path.dirname(__file__), 'scripts')
 
+        log.info('Provisioning host %s...' % host.fqdn)
+        with cd('/root'):
+            file_name = 'image-bootstrap.sh'
+            put(os.path.join(script_dir, file_name), file_name)
+            run('/bin/bash %s' % file_name)
+
         if create_image:
             # Create image
-            log.info('Provisioning host %s...' % host.fqdn)
-            with cd('/root'):
-                file_name = 'image-bootstrap.sh'
-                put(os.path.join(script_dir, file_name), file_name)
-                run('/bin/bash %s' % file_name)
             log.info('Creating image (%s) from host...' % image_name)
             image_id = server.create_image(image_name)
             image = self.cs.images.get(image_id)
@@ -200,6 +201,8 @@ class RackspaceBackend(Backend):
             'hostname': host.hostname,
             'domain_name': host.domain_name,
             'use_public_network': self.use_public_network,
+            'etcd_host_address': settings.ETCD_HOST.split(':')[0],
+            'etcd_host_port': settings.ETCD_HOST.split(':')[1],
             'master': settings.SALT_MASTER
         }, use_jinja=True, template_dir=script_dir)
         run('/bin/bash /root/host-bootstrap.sh')
