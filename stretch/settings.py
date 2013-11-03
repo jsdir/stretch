@@ -146,6 +146,7 @@ INSTALLED_APPS = (
     'allauth.account',
     'djcelery',
     'django_nose',
+    'gunicorn',
     #'api',
     #'tasks',
 )
