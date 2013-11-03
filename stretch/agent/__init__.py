@@ -8,11 +8,14 @@ from datetime import datetime
 from flask import Flask, jsonify
 from flask.ext.restful import reqparse, abort, Api, Resource, marshal_with
 
+from stretch import utils
+
 
 db = pymongo.MongoClient()['stretch-agent']
 app = Flask(__name__)
 api = Api(app, catch_all_404s=True)
 container_dir = '/usr/share/stretch'
+agent_dir = '/var/lib/stretch/agent'
 task_groups = {}
 
 
@@ -100,6 +103,9 @@ class Instance(PersistentObject):
         if not node.pulled: # Has sha or app_path
             raise TaskException("container's node has not been pulled yet")
 
+        # Compile templates for new run
+        self.compile_templates()
+
         # Run container
         cmd = ['docker', 'run', '-d'] + self.get_run_args(node)
         self.data['cid'] = run_cmd(cmd)[0].strip()
@@ -121,14 +127,42 @@ class Instance(PersistentObject):
             return Node(self.data['node_id'])
         return None
 
-    @staticmethod
-    def get_run_args(node):
+    def get_run_args(self, node):
         mounts = ['-v', '%s:%s:ro' % (self.get_templates_path(),
             os.path.join(container_dir, 'templates'))]
         if node.data['app_path']:
             mounts += ['-v', '%s:%s:ro' % (node.data['app_path'],
                 os.path.join(container_dir, 'app'))]
         return mounts
+
+    def get_templates_path(self):
+        return os.path.join(agent_dir, 'templates', self.data['_id'])
+
+    def compile_templates(self):
+        node = self.get_node()
+        if not node:
+            raise TaskException("container's node does not exist")
+        templates_path = self.get_templates_path()
+        # Remove all contents before adding new templates
+        utils.clear_path(templates_path)
+        # Walk through node templates, render, and save to instance templates.
+        # Directory structure is also preserved. .jinja file extensions are
+        # removed.
+        node_templates_path = self.get_node().get_templates_path()
+        for dirpath, dirnames, filenames in os.walk(node_templates_path):
+            rel_dir = os.path.relpath(dirpath, node_templates_path)
+            for file_name in filenames:
+                self.compile_template(os.path.normpath(os.path.join(rel_dir,
+                    file_name)), node_templates_path, templates_path)
+
+    def compile_template(self, rel_path, src, dest):
+        pass
+        '''context = {
+            'env_name'
+            'host_name': self.node.host_id
+            'instance_id': self.data['_id']
+            'release': None or sha
+        }'''
 
     @classmethod
     def start_all(cls):

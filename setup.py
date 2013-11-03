@@ -5,8 +5,8 @@ from setuptools import setup, find_packages
 import stretch
 
 
-def read(filename):
-    return open(filename).read()
+def read(file_name):
+    return open(file_name).read()
 
 
 setup(

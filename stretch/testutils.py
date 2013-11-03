@@ -7,6 +7,7 @@ class MockFileSystem(object):
     def __init__(self, root):
         self.root = root
         self.files = {}
+        self.file_map = {}
 
     def set_files(self, files):
 
@@ -24,6 +25,7 @@ class MockFileSystem(object):
             return dict(items())
 
         self.files = {}
+        self.file_map = files
         for key, value in flatten_dict(files).iteritems():
             self.files[os.path.join(self.root, key)] = value
 
@@ -41,6 +43,36 @@ class MockFileSystem(object):
 
         handle.read.return_value = data
         return handle
+
+    def walk(self, path):
+        rel_path = os.path.relpath(path, self.root)
+        if rel_path.startswith('..'):
+            return
+            yield
+        elif rel_path.startswith('.'):
+            for t in self.iter_walk(self.root, self.file_map):
+                yield t
+        else:
+            files = self.file_map
+            for l in rel_path.split('/'):
+                if l in files:
+                    files = files[l]
+                else:
+                    return
+                    yield
+            for t in self.iter_walk(os.path.join(self.root, rel_path), files):
+                yield t
+
+    def iter_walk(self, path, contents):
+        dirnames, filenames = [], []
+        for key, value in contents.iteritems():
+            if isinstance(value, dict):
+                dirnames.append(key)
+                for t in self.iter_walk(os.path.join(path, key), value):
+                    yield t
+            else:
+                filenames.append(key)
+        yield (path, dirnames, filenames)
 
 
 def mock_attr(**kwargs):

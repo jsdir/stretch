@@ -1,10 +1,11 @@
 import mongomock
-from mock import Mock, patch, PropertyMock
-from nose.tools import eq_, raises, assert_in
+from mock import Mock, patch, PropertyMock, call
+from nose.tools import eq_, raises, assert_in, assert_raises
 from flask import Flask
 from flask.ext.testing import TestCase
+from contextlib import contextmanager
 
-from stretch import agent
+from stretch import agent, testutils
 
 
 class AgentTestCase(TestCase):
@@ -32,6 +33,24 @@ class TestInstance(AgentTestCase):
         }
         self.db.instances.insert(data)
         return agent.Instance('1')
+
+    @contextmanager
+    def mock_fs(self, root):
+        mock_fs = testutils.MockFileSystem(root)
+
+        exists_patch = patch('stretch.agent.os.path.exists', mock_fs.exists)
+        open_patch = patch('stretch.agent.open', mock_fs.open, create=True)
+        walk_patch = patch('stretch.agent.os.walk', mock_fs.walk)
+
+        self.addCleanup(exists_patch.stop)
+        self.addCleanup(open_patch.stop)
+        self.addCleanup(walk_patch.stop)
+
+        exists_patch.start()
+        open_patch.start()
+        walk_patch.start()
+
+        yield mock_fs
 
     def test_get_instances(self):
         rv = self.client.get('/v1/instances')
@@ -141,6 +160,101 @@ class TestInstance(AgentTestCase):
         run_cmd.assert_called_with(['lxc-attach', '-n', 'cid', '--',
             '/bin/bash', '/usr/share/stretch/files/autoload.sh'])
         assert restart.called
+
+    @patch('stretch.agent.Instance.running', new_callable=PropertyMock)
+    def test_should_only_start_when_ready(self, running):
+        instance = self.get_instance()
+        running.return_value = True
+
+        with assert_raises(agent.TaskException):
+            instance.start()
+
+        running.return_value = False
+        instance.get_node = Mock()
+        instance.get_node.return_value = None
+
+        with assert_raises(agent.TaskException):
+            instance.start()
+
+        node = Mock()
+        node.pulled = False
+        instance.get_node.return_value = node
+
+        with assert_raises(agent.TaskException):
+            instance.start()
+
+    @patch('stretch.agent.run_cmd')
+    @patch('stretch.agent.Instance.get_run_args')
+    @patch('stretch.agent.Instance.compile_templates')
+    @patch('stretch.agent.Instance.running', new_callable=PropertyMock)
+    def test_start(self, running, compile_templates, get_run_args, run_cmd):
+        instance = self.get_instance()
+        running.return_value = False
+        instance.get_node = Mock()
+        node = Mock()
+        instance.get_node.return_value = node
+        run_cmd.return_value = ('new_cid', 0)
+        instance.start()
+        self.assertEquals(instance.data['cid'], 'new_cid')
+
+    def test_running(self):
+        instance = self.get_instance()
+        instance.data['cid'] = None
+        assert not instance.running
+        instance.data['cid'] = 'cid'
+        assert instance.running
+
+    @patch('stretch.agent.container_dir', '/stretch')
+    def test_get_run_args(self):
+        instance = self.get_instance()
+        instance.get_templates_path = Mock(return_value='/templates')
+        node = Mock()
+        node.data = {'app_path': None}
+
+        self.assertEquals(instance.get_run_args(node),
+            ['-v', '/templates:/stretch/templates:ro'])
+
+        node.data = {'app_path': '/app/path'}
+        self.assertEquals(instance.get_run_args(node), ['-v',
+            '/templates:/stretch/templates:ro', '-v',
+            '/app/path:/stretch/app:ro'])
+
+    @patch('stretch.agent.agent_dir', '/stretch-agent')
+    def test_get_templates_path(self):
+        instance = self.get_instance()
+        instance.data['_id'] = '123'
+        self.assertEquals(instance.get_templates_path(),
+                          '/stretch-agent/templates/123')
+
+    @patch('stretch.agent.utils.clear_path')
+    @patch('stretch.agent.Instance.get_templates_path', return_value='/b')
+    def test_compile_templates(self, get_templates_path, clear_path):
+        instance = self.get_instance()
+        node = Mock()
+        node.get_templates_path.return_value = '/a'
+        instance.get_node = Mock()
+        instance.get_node.return_value = node
+        instance.compile_template = Mock()
+
+        with self.mock_fs('/a') as fs:
+            fs.set_files({
+                'template': '',
+                'template.jinja': '',
+                'empty': {},
+                'sub': {'template': ''}
+            })
+            instance.compile_templates()
+
+        clear_path.assert_called_with('/b')
+        instance.compile_template.assert_has_calls([
+            call('template', '/a', '/b'),
+            call('template.jinja', '/a', '/b'),
+            call('sub/template', '/a', '/b')
+        ], any_order=True)
+
+    def test_compile_template(self):
+        instance = self.get_instance()
+        instance.compile_template('file', 'from', 'to')
 
 
 class TestTask(AgentTestCase):
