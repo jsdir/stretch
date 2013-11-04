@@ -143,11 +143,11 @@ class Instance(PersistentObject):
         if not node:
             raise TaskException("container's node does not exist")
         templates_path = self.get_templates_path()
+
         # Remove all contents before adding new templates
         utils.clear_path(templates_path)
+
         # Walk through node templates, render, and save to instance templates.
-        # Directory structure is also preserved. .jinja file extensions are
-        # removed.
         node_templates_path = self.get_node().get_templates_path()
         for dirpath, dirnames, filenames in os.walk(node_templates_path):
             rel_dir = os.path.relpath(dirpath, node_templates_path)
@@ -156,13 +156,25 @@ class Instance(PersistentObject):
                     file_name)), node_templates_path, templates_path)
 
     def compile_template(self, rel_path, src, dest):
-        pass
-        '''context = {
-            'env_name'
-            'host_name': self.node.host_id
-            'instance_id': self.data['_id']
-            'release': None or sha
-        }'''
+        src_path = os.path.join(src, rel_path)
+        dest_path, ext = os.path.splitext(os.path.join(dest, rel_path))
+
+        # Remove .jinja extension
+        ext = ext.lower()
+        if ext != '.jinja':
+            dest_path += ext
+
+        # Ensure container folder exists
+        utils.makedirs(os.path.split(dest_path)[0])
+
+        context = {
+            'env_name': self.node.data['env_name'],
+            'host_name': self.data['name'],
+            'instance_id': self.data['_id'],
+            'release': self.node.data['sha']
+        }
+
+        utils.render_template_to_file(src_path, dest_path, [context])
 
     @classmethod
     def start_all(cls):
@@ -223,6 +235,32 @@ class Node(PersistentObject):
     @property
     def pulled(self):
         return self.data['sha'] or self.data['app_path']
+
+
+class LoadBalancer(PersistentObject):
+    name = 'loadbalancer'
+
+    @classmethod
+    def create(cls, node_port):
+        try:
+            self.collection.insert({
+                '_id': node_id,
+                'node_port': env_id,
+                'address': address
+            })
+        except pymongo.errors.DuplicateKeyError as e:
+            self.abort_exists()
+        return cls(node_id)
+
+    def add_host(self, host):
+        pass
+
+    def remove_host(self, host):
+        pass
+
+
+class Host(PersistentObject):
+    name = 'host'
 
 
 class InstanceListResource(Resource):
