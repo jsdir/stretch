@@ -153,9 +153,9 @@ class Instance(PersistentObject):
             rel_dir = os.path.relpath(dirpath, node_templates_path)
             for file_name in filenames:
                 self.compile_template(os.path.normpath(os.path.join(rel_dir,
-                    file_name)), node_templates_path, templates_path)
+                    file_name)), node_templates_path, templates_path, node)
 
-    def compile_template(self, rel_path, src, dest):
+    def compile_template(self, rel_path, src, dest, node):
         src_path = os.path.join(src, rel_path)
         dest_path, ext = os.path.splitext(os.path.join(dest, rel_path))
 
@@ -169,7 +169,7 @@ class Instance(PersistentObject):
 
         context = {
             'env_name': self.node.data['env_name'],
-            'host_name': self.data['name'],
+            'host_name': self.data['host_name'],
             'instance_id': self.data['_id'],
             'release': self.node.data['sha']
         }

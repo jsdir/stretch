@@ -145,10 +145,7 @@ INSTALLED_APPS = (
     'allauth',
     'allauth.account',
     'djcelery',
-    'django_nose',
-    'gunicorn',
-    #'api',
-    #'tasks',
+    'django_nose'
 )
 
 TEST_RUNNER = 'django_nose.NoseTestSuiteRunner'

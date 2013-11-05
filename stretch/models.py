@@ -322,9 +322,9 @@ model_signals.pre_delete.connect(Instance.pre_delete, sender=Instance)
 
 
 class LoadBalancer(models.Model):
-    port = models.IntegerField()
     host_port = models.IntegerField()
-    protocol = models.TextField()
+    #Enum
+    #protocol = models.TextField(choice=())
     address = models.GenericIPAddressField()
     backend_id = models.CharField(max_length=32, unique=True)
 
