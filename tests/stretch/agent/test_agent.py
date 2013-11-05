@@ -1,5 +1,5 @@
 import mongomock
-from mock import Mock, patch, PropertyMock, call
+from mock import Mock, patch, PropertyMock, call, DEFAULT
 from nose.tools import eq_, raises, assert_in, assert_raises
 from flask import Flask
 from flask.ext.testing import TestCase
@@ -247,14 +247,43 @@ class TestInstance(AgentTestCase):
 
         clear_path.assert_called_with('/b')
         instance.compile_template.assert_has_calls([
-            call('template', '/a', '/b'),
-            call('template.jinja', '/a', '/b'),
-            call('sub/template', '/a', '/b')
+            call('template', '/a', '/b', node),
+            call('template.jinja', '/a', '/b', node),
+            call('sub/template', '/a', '/b', node)
         ], any_order=True)
 
-    def test_compile_template(self):
+    @patch.multiple('stretch.agent.utils', makedirs=DEFAULT,
+                    render_template_to_file=DEFAULT)
+    def test_compile_template(self, makedirs, render_template_to_file):
         instance = self.get_instance()
-        instance.compile_template('file', 'from', 'to')
+        instance.data['host_name'] = 'a.example.com'
+        instance.data['_id'] = 'instance_id'
+        instance.node = node = Mock()
+        node.data = {'env_name': 'env', 'sha': None}
+
+        instance.compile_template('template', '/from', '/to', node)
+        makedirs.assert_called_with('/to')
+        render_template_to_file.assert_called_with('/from/template',
+            '/to/template', [{
+                'env_name': 'env',
+                'host_name': 'a.example.com',
+                'instance_id': 'instance_id',
+                'release': None
+            }]
+        )
+
+        makedirs.reset_mock()
+        render_template_to_file.reset_mock()
+        instance.compile_template('sub/template.JINJA', '/from', '/to', node)
+        makedirs.assert_called_with('/to/sub')
+        render_template_to_file.assert_called_with('/from/sub/template.JINJA',
+            '/to/sub/template', [{
+                'env_name': 'env',
+                'host_name': 'a.example.com',
+                'instance_id': 'instance_id',
+                'release': None
+            }]
+        )
 
 
 class TestTask(AgentTestCase):
@@ -262,6 +291,11 @@ class TestTask(AgentTestCase):
         pass
 
     def test_create_task(self):
+        pass
+
+
+class TestHost(AgentTestCase):
+    def test_a(self):
         pass
 
 
