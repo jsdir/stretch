@@ -7,7 +7,7 @@ from django.core import management
 from djcelery.management.commands import celery
 
 from stretch import agent
-from stretch.agent import loadbalancer
+from stretch.agent import loadbalancer_server
 
 
 def run(args=sys.argv[1:]):
@@ -30,7 +30,7 @@ def run(args=sys.argv[1:]):
     if args.command == 'agent':
         agent.run()
     if args.command == 'lb':
-        loadbalancer.run()
+        loadbalancer_server.run()
     elif args.command == 'autoload':
         management.call_command('autoload')
     elif args.command == 'celery':

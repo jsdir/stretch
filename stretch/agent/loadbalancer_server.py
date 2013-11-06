@@ -1,8 +1,14 @@
+import xmlrpclib
 from twisted.web import xmlrpc, server
 from twisted.internet import reactor, defer
 from twisted.internet.protocol import Factory
 from twisted.protocols.portforward import ProxyServer, ProxyFactory
 from twisted.application import internet, service
+
+from stretch import utils
+
+
+port = 24226
 
 
 class TCPLoadBalancerFactory(Factory):
@@ -75,9 +81,14 @@ class ObjectExists(LoadBalancerException):
     pass
 
 
+@utils.memoized
+def get_client():
+    return xmlrpclib.ServerProxy('http://localhost:%s/' % port)
+
+
 def run():
     s = TCPLoadBalancerServer()
     # TODO: use UNIX sockets
     # reactor.listenUNIX('/var/run/stretch-agent/lb.sock', server.Site(s))
-    reactor.listenTCP(24226, server.Site(s))
+    reactor.listenTCP(port, server.Site(s))
     reactor.run()

@@ -256,11 +256,22 @@ class Port(AuditedModel):
     name = models.TextField(validators=[alphanumeric])
     number = models.IntegerField()
 
+    @classmethod
+    def pre_delete(cls, sender, instance, **kwargs):
+        log.info('Port pre_delete')
+
+model_signals.pre_delete.connect(Port.pre_delete, sender=Port)
 
 class Node(AuditedModel):
     name = models.TextField(validators=[alphanumeric])
     system = models.ForeignKey('System', related_name='nodes')
     unique_together = ('system', 'name')
+
+    @classmethod
+    def pre_delete(cls, sender, instance, **kwargs):
+        log.info('Node pre_delete')
+
+model_signals.pre_delete.connect(Node.pre_delete, sender=Node)
 
 
 class Instance(AuditedModel):
