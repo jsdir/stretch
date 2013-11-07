@@ -105,9 +105,9 @@ class Environment(AuditedModel):
                 self.app_paths = snapshot.get_app_paths()
                 # Build new images specifically for source
                 snapshot.build_and_push(None, self.system)
-                self.deploy_to_instances(snapshot, nodes=snapshot.nodes)
+                self.deploy_to_instances()
             else:
-                self.deploy_to_instances(snapshot, sha=obj.sha)
+                self.deploy_to_instances(obj.sha)
 
         self.save()
 
@@ -134,51 +134,11 @@ class Environment(AuditedModel):
         deploy.save()
         return deploy
 
-    def deploy_to_instances(self, snapshot, sha=None, nodes=None):
-
-        def check(instance, is_finished, deactivated):
-
-            def is_finished_job():
-                """
-                Pending: False
-                Done:    !False (result)
-                """
-                result = is_finished()
-                if result != False and deactivated:
-                    instance.host.activate()
-                return result
-
-            return is_finished_job
-
-        def deploy(instance):
-            if sha:
-                deactivated = instance.host.deactivate()
-                return check(instance, instance.deploy(sha=sha), deactivated)
-            elif nodes:
-                for node in nodes:
-                    if node.name == instance.node.name and node.app_path:
-                        deactivated = instance.host.deactivate()
-                        return check(instance, instance.deploy(), deactivated)
-
-            return None
-
-        template_path = os.path.join(settings.STRETCH_CACHE_DIR, 'templates',
-                                     str(self.pk))
-        with snapshot.mount_templates(template_path):
-            self.map_instances(deploy)
-
-    def map_instances(self, callback):
+    def deploy_to_instances(self, sha=None):
         batch_size = min(int(math.ceil(self.instances.count() / 2.0)),
                          settings.STRETCH_BATCH_SIZE)
 
-        instances = []
-        for instance in self.instances.all():
-            instance.group = instance.host.group
-            instances.append(instance)
-
-        groups = utils.group_by_attr(instances, 'group')
-        log.info('Mapping deploy to groups: %s @ %s' % (groups, batch_size))
-        results = utils.map_groups(callback, groups, batch_size)
+        host.pull_nodes(sha)
 
     @classmethod
     def post_save(cls, sender, instance, created, **kwargs):
@@ -256,22 +216,20 @@ class Port(AuditedModel):
     name = models.TextField(validators=[alphanumeric])
     number = models.IntegerField()
 
-    @classmethod
-    def pre_delete(cls, sender, instance, **kwargs):
-        log.info('Port pre_delete')
-
-model_signals.pre_delete.connect(Port.pre_delete, sender=Port)
 
 class Node(AuditedModel):
     name = models.TextField(validators=[alphanumeric])
     system = models.ForeignKey('System', related_name='nodes')
     unique_together = ('system', 'name')
 
-    @classmethod
-    def pre_delete(cls, sender, instance, **kwargs):
-        log.info('Node pre_delete')
-
-model_signals.pre_delete.connect(Node.pre_delete, sender=Node)
+    def get_image(self, local=False, private=False):
+        if local:
+            prefix = stretch_agent
+        elif private:
+            prefix = settings.STRETCH_REGISTRY_PRIVATE_URL
+        else:
+            prefix = settings.STRETCH_REGISTRY_PUBLIC_URL
+        return '%s/sys%s/%s' % (prefix, self.system.pk, self.name)
 
 
 class Instance(AuditedModel):
@@ -285,54 +243,33 @@ class Instance(AuditedModel):
     def create(cls, env, host, node):
         instance = cls(environment=env, host=host, node=node)
         instance.save()
-        instance.host.add_instance(instance)
+        instance.host.agent.add_instance(instance)
 
-    def get_deploy_options(self, sha=None):
-        if sha:
-            app_path = None
-        else:
-            app_path = self.environment.app_paths[self.node.name]
-
-        system = self.environment.system
-        ports = dict([(p.name, p.number) for p in self.node.ports.all()])
-
-        return {
-            'system_id': str(self.environment.system.pk),
-            'env_id': str(self.environment.pk),
-            'env_name': self.environment.name,
-            'node_id': str(self.node.pk),
-            'node_name': self.node.name,
-            'node_ports': ports,
-            'node_app_path': app_path,
-            'registry_url': settings.STRETCH_REGISTRY_PRIVATE_URL,
-            'instance_key': system.config_manager.get_instance_key(self),
-            'sha': sha
-        }
+    # CHANGE
+    def get_endpoint(self):
+        # Get the instance's current endpoint from the config manager
+        pass
 
     def reload(self):
-        return self.host.reload_instance(self)
+        self.host.agent.reload_instance(self)
 
     def restart(self):
-        return self.host.restart_instance(self)
+        self.host.agent.restart_instance(self)
 
-    def deploy(self, sha=None):
-        return self.host.deploy_instance(self, sha)
-
-    @classmethod
-    def post_save(cls, sender, instance, created, **kwargs):
-        instance.environment.system.config_manager.add_instance(instance)
+    @property
+    def config_key(self):
+        return self.environment.system.config_manger.get_instance_key(self)
 
     @classmethod
     def pre_delete(cls, sender, instance, **kwargs):
-        instance.environment.system.config_manager.remove_instance(instance)
-        instance.host.remove_instance(instance)
+        instance.host.agent.remove_instance(instance)
 
 
-model_signals.post_save.connect(Instance.post_save, sender=Instance)
 model_signals.pre_delete.connect(Instance.pre_delete, sender=Instance)
 
 
 class LoadBalancer(models.Model):
+    id = uuidfield.UUIDField(auto=True, primary_key=True)
     host_port = models.IntegerField()
     #Enum
     #protocol = models.TextField(choice=())
@@ -340,8 +277,7 @@ class LoadBalancer(models.Model):
     backend_id = models.CharField(max_length=32, unique=True)
 
     def activate_with_hosts(self, hosts):
-        backend = self.get_backend()
-        self.backend_id, self.address = backend.create_lb(self, hosts)
+        self.address = self.get_backend().create_lb(self, hosts, str(self.pk))
 
     def get_backend(self):
         backend = self.group.environment.backend
@@ -355,12 +291,6 @@ class LoadBalancer(models.Model):
     def remove_host(self, host):
         self.get_backend().lb_remove_host(self, host)
 
-    def activate_host(self, host):
-        self.get_backend().lb_activate_host(self, host)
-
-    def deactivate_host(self, host):
-        self.get_backend().lb_deactivate_host(self, host)
-
     def delete(self):
         self.get_backend().delete_lb(self)
         super(LoadBalancer, self).delete()
@@ -368,6 +298,7 @@ class LoadBalancer(models.Model):
 
 class Host(AuditedModel):
     fqdn = models.TextField(unique=True)
+    name = models.TextField(unique=True)
     hostname = models.TextField()
     domain_name = models.TextField(null=True)
     group = models.ForeignKey('Group', related_name='hosts', null=True)
@@ -382,8 +313,8 @@ class Host(AuditedModel):
                     else fqdn.replace(domain_name, ''))
         fqdn = '%s.%s' % (hostname, domain_name) if domain_name else hostname
 
-        host = cls(fqdn=fqdn, hostname=hostname, domain_name=domain_name,
-                   environment=env, group=group)
+        host = cls(fqdn=fqdn, name=name, hostname=hostname,
+                   domain_name=domain_name, environment=env, group=group)
 
         if group:
             # Managed host
@@ -401,6 +332,14 @@ class Host(AuditedModel):
             host.create_instance(group.node)
 
         return host
+
+    def pull_nodes(self, sha=None):
+        # TODO: make this concurrent
+        nodes = []
+        for instance in self.instances.all():
+            if instance.node not in nodes:
+                nodes.append(instance.node)
+                self.agent.pull(instance.node, sha)
 
     def create_instance(self, node):
         Instance.create(self.environment, self, node)
@@ -444,16 +383,6 @@ class Host(AuditedModel):
                 log.debug(result)
                 break
 
-    def activate(self):
-        self.group.activate_host(self)
-
-    def deactivate(self):
-        deactivated = False
-        if self.group and self.instances.count() > 1:
-            self.group.deactivate_host(self)
-            deactivated = True
-        return deactivated
-
     def add_instance(self, instance):
         release = self.environment.current_release
         if not release and not self.environment.using_source:
@@ -466,44 +395,13 @@ class Host(AuditedModel):
         utils.wait(self.instance_call(instance, 'stretch.add_instance',
                                       instance.get_deploy_options(sha)))
 
-    def remove_instance(self, instance):
-        utils.wait(self.instance_call(instance, 'stretch.remove_instance'))
-
-    def reload_instance(self, instance):
-        return self.instance_call(instance, 'stretch.reload')
-
-    def restart_instance(self, instance):
-        return self.instance_call(instance, 'stretch.restart')
-
-    def deploy_instance(self, instance, sha=None):
-        return self.instance_call(instance, 'stretch.deploy',
-                                  instance.get_deploy_options(sha))
-
-    def instance_call(self, instance, cmd, *args, **kwargs):
-        args = [str(instance.pk)] + list(args)
-        log.info('Calling instance -> %s (%s, %s)' % (self.fqdn, cmd, args))
-        jid = salt_client().cmd_async(self.fqdn, cmd, args, **kwargs)
-
-        def is_finished():
-            #running_jids = runner_client().cmd('jobs.active', []).keys()
-            #if jid in running_jids:
-            #    log.info('Waiting for job [%s]...' % jid)
-            #    return False
-            #else:
-            job = salt_client().get_cache_returns(jid)
-            if job:
-                result = job.values()[0]
-                log.info('Job [%s] finished' % jid)
-                log.debug(' - result: %s' % result)
-                return result
-            else:
-                log.info('Waiting for job [%s]...' % jid)
-                return False
-
-        return is_finished
-
     def call(self, *args, **kwargs):
         return salt_client().cmd(self.fqdn, *args, **kwargs)
+
+    @property
+    @utils.memoized
+    def agent(self):
+        return AgentClient(self.address)
 
     @classmethod
     def post_save(cls, sender, instance, created, **kwargs):
@@ -515,7 +413,6 @@ class Host(AuditedModel):
     @classmethod
     def pre_delete(cls, sender, instance, **kwargs):
         host = instance
-        host.instances.all().delete()
         host.delete_key()
         if host.group:
             if not host.environment.backend:
@@ -537,14 +434,6 @@ class Group(AuditedModel):
     node = models.ForeignKey('Node')
     load_balancer = models.OneToOneField('LoadBalancer', null=True)
     unique_together = ('environment', 'name')
-
-    def activate_host(self, host):
-        if self.load_balancer:
-            self.load_balancer.activate_host(host)
-
-    def deactivate_host(self, host):
-        if self.load_balancer:
-            self.load_balancer.deactivate_host(host)
 
     def scale_up(self, amount):
         self.check_valid_amount(self.hosts.count() + amount)
@@ -615,7 +504,10 @@ class Deploy(AuditedModel):
         self.snapshot = snapshot
         self.snapshot.run_build_plugins(self)
         self.snapshot.run_pre_deploy_plugins(self)
-        yield
+        template_path = os.path.join(settings.STRETCH_CACHE_DIR, 'templates',
+                                     str(self.environment.pk))
+        with self.snapshot.mount_templates(template_path):
+            yield
         self.snapshot.run_post_deploy_plugins(self)
         utils.delete_path(self.snapshot.path)
         if self.existing_snapshot:

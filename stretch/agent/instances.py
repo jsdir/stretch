@@ -12,6 +12,7 @@ class Instance(resources.PersistentObject):
     @classmethod
     def create(cls, args):
         super(Instance, self).create(args)
+        # TODO: have start/stop behave as individual tasks
         self.start()
 
     def delete(self):
@@ -142,7 +143,7 @@ class InstanceListResource(resources.ObjectListResource):
         parser = reqparse.RequestParser()
         parser.add_argument('node_id', type=str, required=True)
         parser.add_argument('host_name', type=str, required=True)
-        parser.add_argument('parent_config_key', type=str, required=True)
+        parser.add_argument('config_key', type=str, required=True)
         super(InstanceListResource, self).post(parser)
 
 
@@ -150,11 +151,16 @@ class InstanceResource(resources.ObjectResource):
     obj_class = Instance
 
 
-def restart(instance, args):
+def restart_instance(instance, args):
     instance.restart()
+
+
+def reload_instance(instance, args):
+    instance.reload()
 
 
 resources.add_api_resource('instances', InstanceResource, InstanceListResource)
 resources.add_task_resource('instances', Instance, {
-    'restart': {'task': restart}
+    'restart': {'task': restart_instance},
+    'reload': {'task': reload_instance},
 })

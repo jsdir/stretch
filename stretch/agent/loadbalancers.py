@@ -1,7 +1,7 @@
 from flask.ext.restful import reqparse, Resource
 
 from stretch.agent.loadbalancer_server import get_client
-from stretch.agent import api, resources
+from stretch.agent import api, resources, db
 
 
 class LoadBalancer(resources.PersistentObject):
@@ -19,11 +19,15 @@ class LoadBalancerResource(resources.ObjectResource):
 class EndpointListResource(Resource):
     def post(self, lb_id):
         args = self.parse_args()
+        args['lb_id'] = lb_id
+        db.endpoints.insert(args)
         get_client().add_endpoint(lb_id, (args['host'], args['port']))
         return '', 201
 
     def delete(self, lb_id):
         args = self.parse_args()
+        args['lb_id'] = lb_id
+        db.endpoints.remove(args)
         get_client().remove_endpoint(lb_id, (args['host'], args['port']))
         return '', 204
 

@@ -285,11 +285,10 @@ class Container(object):
                 self.tag = 'stretch_base/sys%s' % system.pk
             elif release:
                 # Node container
-                self.tag = '%s/sys%s/%s' % (settings.STRETCH_REGISTRY_PUBLIC_URL,
-                                            system.pk, node.name)
+                self.tag = node.get_image()
             else:
                 # Local container
-                self.tag = 'stretch_agent/sys%s/%s' % (system.pk, node.name)
+                self.tag = node.get_image(local=True)
 
             # Build image
             log.info('Building %s' % self.tag)

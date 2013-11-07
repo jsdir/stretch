@@ -236,6 +236,7 @@ DOMAIN_NAME = None
 SALT_CONF_PATH = '/etc/salt'
 STRETCH_BATCH_SIZE = 5
 STRETCH_REGISTRY_URL = 'registry.example.net:5000'
+STRETCH_AGENT_PORT = 24225
 
 try:
     from .local_settings import *

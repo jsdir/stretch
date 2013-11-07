@@ -40,6 +40,7 @@ def pull(node, args):
     # Pull image
     if not args['app_path']:
         utils.run_cmd(['docker', 'pull', args['image']])
+    # TODO: Pull templates
     # Update node
     args['ports'] = json.loads(args['ports'])
     node.update(args)

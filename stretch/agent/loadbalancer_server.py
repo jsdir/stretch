@@ -83,7 +83,7 @@ class ObjectExists(LoadBalancerException):
 
 @utils.memoized
 def get_client():
-    return xmlrpclib.ServerProxy('http://localhost:%s/' % port)
+    return xmlrpclib.ServerProxy('http://127.0.0.1:%s/' % port)
 
 
 def run():
