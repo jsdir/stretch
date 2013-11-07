@@ -97,7 +97,7 @@ class TestConfigManager(object):
 
 
 class TestEtcdConfigManager(TestCase):
-    @patch('etcd.Client', Mock())
+    @patch('etcd.Etcd', Mock())
     def setUp(self):
         super(TestEtcdConfigManager, self).setUp()
 
@@ -106,7 +106,7 @@ class TestEtcdConfigManager(TestCase):
 
     def test_set(self):
         self.cm.set('/key', 'value')
-        self.etcd_client.set.assert_called_with('/key', 'value')
+        self.etcd_client.set.assert_called_with('key', 'value')
 
     def test_get(self):
         self.etcd_client.get.return_value = testutils.mock_attr(value='value')
@@ -124,7 +124,12 @@ class TestEtcdConfigManager(TestCase):
         self.cm.delete('/key')
         self.etcd_client.delete.assert_called_with('/key')
 
-    @patch('etcd.Client')
+    def test_delete_recursive(self):
+        raise Exception
+        #self.cm.delete('/key')
+        #self.etcd_client.delete.assert_called_with('/key')
+
+    @patch('etcd.Etcd')
     def test_init(self, client):
         cm = config_managers.EtcdConfigManager('1.1.1.1:22')
         client.assert_called_with(host='1.1.1.1', port=22)

@@ -34,7 +34,7 @@ class TestEnvironment(TestCase):
         task = Mock()
         release = Mock()
 
-        deploy = self.env.save_deploy(task, release)
+        deploy = self.env._save_deploy(task, release)
         mock_deploy.create.assert_called_with(
             environment=self.env,
             existing_release=current_release,
@@ -45,7 +45,9 @@ class TestEnvironment(TestCase):
 
     @patch('stretch.models.Deploy')
     @patch('stretch.models.Environment.instances')
-    def test_autoload(self, instances, mock_deploy):
+    @patch('stretch.models.Environment.backend')
+    def test_autoload(self, backend, instances, mock_deploy):
+        backend.autoloads = True
         mock_attr = testutils.mock_attr
         deploy = Mock()
         mock_deploy.create.return_value = deploy
@@ -62,34 +64,34 @@ class TestEnvironment(TestCase):
         mock_deploy.create.assert_called_with(environment=self.env)
 
     @patch('stretch.models.current_task', 'task')
-    @patch.multiple('stretch.models.Environment', save_deploy=DEFAULT,
-                    deploy_obj=DEFAULT)
-    def test_deploy_source(self, save_deploy, deploy_obj):
+    @patch.multiple('stretch.models.Environment', _save_deploy=DEFAULT,
+                    _deploy_obj=DEFAULT)
+    def test_deploy_source(self, _save_deploy, _deploy_obj):
         source = Mock(spec=['pull'])
         deploy = Mock()
-        save_deploy.return_value = deploy
+        _save_deploy.return_value = deploy
 
         self.env.deploy(source)
 
-        save_deploy.assert_called_with('task')
-        deploy_obj.assert_called_with(source, deploy)
+        _save_deploy.assert_called_with('task')
+        _deploy_obj.assert_called_with(source, deploy)
         eq_(self.env.current_release, None)
         eq_(self.env.using_source, True)
 
     @patch('stretch.models.current_task', 'task')
-    @patch.multiple('stretch.models.Environment', save_deploy=DEFAULT,
-                    deploy_obj=DEFAULT, current_release=DEFAULT)
-    def test_deploy_release(self, save_deploy, deploy_obj, current_release):
+    @patch.multiple('stretch.models.Environment', _save_deploy=DEFAULT,
+                    _deploy_obj=DEFAULT, current_release=DEFAULT)
+    def test_deploy_release(self, _save_deploy, _deploy_obj, current_release):
         release = Mock(spec=['sha'])
         deploy = Mock()
-        save_deploy.return_value = deploy
+        _save_deploy.return_value = deploy
 
         snapshot = Mock()
         current_release.get_snapshot.return_value = snapshot
         self.env.deploy(release)
 
-        save_deploy.assert_called_with('task', release)
-        deploy_obj.assert_called_with(release, deploy)
+        _save_deploy.assert_called_with('task', release)
+        _deploy_obj.assert_called_with(release, deploy)
         eq_(deploy.existing_snapshot, snapshot)
         eq_(self.env.current_release, release)
         eq_(self.env.using_source, False)
@@ -100,29 +102,29 @@ class TestEnvironment(TestCase):
         self.env.deploy(obj)
 
     @patch.multiple('stretch.models.Environment', save=DEFAULT,
-                    deploy_to_instances=DEFAULT)
-    def test_deploy_obj_source(self, save, deploy_to_instances):
+                    _deploy_to_instances=DEFAULT)
+    def test_deploy_obj_source(self, save, _deploy_to_instances):
         source = Mock()
         snapshot = Mock()
         snapshot.get_app_paths.return_value = ['a']
         source.get_snapshot.return_value = snapshot
         deploy = MagicMock()
         self.env.using_source = True
-        self.env.deploy_obj(source, deploy)
-        deploy_to_instances.assert_called_with()
+        self.env._deploy_obj(source, deploy)
+        _deploy_to_instances.assert_called_with()
         save.assert_called_with()
         eq_(self.env.app_paths, ['a'])
         snapshot.build_and_push.assert_called_with(None, self.system)
 
     @patch.multiple('stretch.models.Environment', save=DEFAULT,
-                    deploy_to_instances=DEFAULT)
-    def test_deploy_obj_release(self, save, deploy_to_instances):
+                    _deploy_to_instances=DEFAULT)
+    def test_deploy_obj_release(self, save, _deploy_to_instances):
         release = Mock()
         deploy = MagicMock()
         self.env.using_source = False
         release.sha = 'sha'
-        self.env.deploy_obj(release, deploy)
-        deploy_to_instances.assert_called_with('sha')
+        self.env._deploy_obj(release, deploy)
+        _deploy_to_instances.assert_called_with('sha')
         save.assert_called_with()
 
     def test_post_save_created(self):
@@ -132,7 +134,7 @@ class TestEnvironment(TestCase):
         config_manager.add_env.assert_called_with(env)
         config_manager.sync_env_config.assert_called_with(env)
 
-    def test_post_save_created(self):
+    def test_post_save(self):
         env = Mock()
         config_manager = env.system.config_manager
         self.env.post_save(Mock(), env, False)
