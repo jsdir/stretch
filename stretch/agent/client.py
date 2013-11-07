@@ -1,8 +1,12 @@
 import json
 import time
 import requests
+import time
 from urlparse import urljoin
 from django.conf import settings
+import gevent
+
+gevent.monkey.patch_all()
 
 
 class AgentClient(object):
@@ -54,7 +58,7 @@ class AgentClient(object):
         task_id = requests.post(base_url, data=options)['_id']
 
         while True:
-            time.sleep(1.0)
+            gevent.sleep(1.0)
             task = requests.get(urljoin(base_url, task_id)).json()
             if task['status'] == 'FAILED':
                 raise Exception(task['error'])

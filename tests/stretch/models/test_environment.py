@@ -137,3 +137,6 @@ class TestEnvironment(TestCase):
         config_manager = env.system.config_manager
         self.env.post_save(Mock(), env, False)
         config_manager.sync_env_config.assert_called_with(env)
+
+    def test_deploy_to_instances(self):
+        pass

@@ -13,6 +13,8 @@ from django.db.models import signals as model_signals
 from django.dispatch import receiver
 from django.core.validators import RegexValidator
 from django.conf import settings
+from gevent.pool import Pool
+from gevent.pool import Group as GeventGroup
 from celery import current_task, group
 from celery.contrib.methods import task
 
@@ -76,6 +78,12 @@ class System(AuditedModel):
     @property
     @utils.memoized
     def config_manager(self):
+        """
+        Returns a memoized configuration manager (client) to be used with the
+        system. Even though configuration mangers are structured to handle
+        multiple systems, they are bound to systems in case different systems
+        need different or separate configuration managers in the future.
+        """
         return config_managers.get_config_manager()
 
 
@@ -180,7 +188,8 @@ class Environment(AuditedModel):
     def _deploy_obj(self, obj, deploy):
         """
         Deploy a release or source to all instances and hosts in the
-        environment.
+        environment. Also sets up context and builds images (if necessary) for
+        the deploy.
 
         :Parameters:
           - `obj`: an object assumed to be a release or source.
@@ -189,10 +198,11 @@ class Environment(AuditedModel):
         snapshot = obj.get_snapshot()
         with deploy.start(snapshot):
             if self.using_source:
-                # WARNING: If celery is used for deploying instances, app_paths
-                # will have to be saved in order to persist across processes.
-                # Since instances and hosts are deployed to by threads instead
-                # of separate processes, this is not a concern.
+                # Potential WARNING: If celery is used for deploying instances,
+                # app_paths will have to be saved in order to persist across
+                # processes. Since instances and hosts are deployed to by
+                # threads instead of separate processes, this is not a concern
+                # for now.
                 self.app_paths = snapshot.get_app_paths()
                 # Build new images for source
                 snapshot.build_and_push(None, self.system)
@@ -205,11 +215,47 @@ class Environment(AuditedModel):
         self.save()
 
     def _deploy_to_instances(self, sha=None):
-        # TODO: make tasks non-concurrent, (celery locks)
-        batch_size = min(int(math.ceil(self.instances.count() / 2.0)),
-                         settings.STRETCH_BATCH_SIZE)
+        """
+        Pulls all associated nodes for every host in the environment. After the
+        nodes are pulled, all associated instances are restarted. Since this
+        task would consume too much time to perform sequentially, and since
+        most of the subtasks involved are largely IO-bound, gevent is used
+        to asynchronously pool and execute these sets of tasks.
 
-        host.pull_nodes(sha)
+        A host has to pull nodes before its instances can restart and use the
+        updated node. In order to follow this constraint while retaining
+        concurrency, host and instance pools are used. Execution is blocked
+        until both of these pools become empty.
+
+        Batch size is used as a form of rate limiting to prevent excessive
+        load on the image registry. A batch size of five means that a maximum
+        of five hosts can download images from the registry at the same time.
+        When a host is finished, another host is added to the pool. This
+        continues until all hosts have pulled their images. When a host is
+        finished pulling its images and templates, all of its instances are
+        added to an instance pool.
+
+        An instance pool is given to every group in the environment. The
+        concurrency of each pool is determined by the number of instances it
+        contains.
+
+        :Parameters:
+          - `sha`: the sha of the release to deploy. Left `None` if a source is
+          being deployed.
+        """
+
+        group_pools = {None: GeventGroup()}
+
+        for group in self.groups.all():
+            group_pools[group] = Pool(group.batch_size)
+
+        host_pool = Pool(settings.STRETCH_BATCH_SIZE)
+        for host in self.hosts.all():
+            if host.group in group_pools:
+                group_pool = group_pools[host.group]
+            host_pool.spawn(host.pull_nodes, sha, group_pool)
+
+        [pool.join() for pool in group_pools.values()]
 
     @classmethod
     def post_save(cls, sender, instance, created, **kwargs):
@@ -412,13 +458,15 @@ class Host(AuditedModel):
 
         return host
 
-    def pull_nodes(self, sha=None):
-        # TODO: make this concurrent
+    def pull_nodes(self, sha=None, group_pool):
         nodes = []
         for instance in self.instances.all():
             if instance.node not in nodes:
                 nodes.append(instance.node)
                 self.agent.pull(instance.node, sha)
+
+        for instance in self.instances.get():
+            group_pool.spawn(instance.restart)
 
     def create_instance(self, node):
         Instance.create(self.environment, self, node)
@@ -506,6 +554,7 @@ model_signals.pre_delete.connect(Host.pre_delete, sender=Host)
 
 
 class Group(AuditedModel):
+    # TODO: enforce host -> single container with self.node policy
     name = models.TextField(validators=[alphanumeric])
     environment = models.ForeignKey('Environment', related_name='groups')
     minimum_nodes = models.IntegerField(default=1)
@@ -548,6 +597,11 @@ class Group(AuditedModel):
             valid = self.minimum_nodes <= amount <= self.maximum_nodes
         if not valid:
             raise Exception('invalid scaling amount')
+
+    @property
+    def batch_size(self):
+        return min(int(math.ceil(self.instances.count() / 2.0)),
+                   settings.STRETCH_BATCH_SIZE)
 
     @task
     def _create_host(self):
