@@ -1,8 +1,11 @@
 import os
 from flask.ext.restful import reqparse
 
-from stretch import utils
+from stretch import utils, config_managers
 from stretch.agent import resources, TaskException, nodes
+
+
+config_manager = config_managers.EtcdConfigManager('127.0.0.1:4001')
 
 
 class Instance(resources.PersistentObject):
@@ -54,16 +57,24 @@ class Instance(resources.PersistentObject):
         self.data['cid'] = run_cmd(cmd)[0].strip()
         self.save()
 
+        # Get ports
+        ports = {}
+        for name, port in self.data['ports'].iteritems():
+            # TODO: Use API when it can handle port mapping
+            host = run_cmd(['docker', 'port', self.data['cid'], str(port)])
+            ports[name] = int(host.split(':')[1])
+
         # Add to config
-        # TODO
+        config_manager.set_dict('%s/ports' % self.data['config_key'], ports)
 
     def stop(self):
         if not self.running:
             raise TaskException('container is already stopped')
 
         # Remove from config
-        # TODO
+        config_manager.delete(self.data['config_key'])
 
+        # Stop container
         run_cmd(['docker', 'stop', self.data['cid']])
         self.data['cid'] = None
         self.save()
