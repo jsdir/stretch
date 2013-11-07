@@ -18,8 +18,8 @@ class TaskException(Exception):
 
 def run():
     instances.Instance.start_all()
-    # TODO: start all load balancers
-    app.run(debug=True)
+    loadbalancers.LoadBalancer.start_all()
+    app.run()
 
 
 @app.route('/')
