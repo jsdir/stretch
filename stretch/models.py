@@ -29,6 +29,10 @@ alphanumeric = RegexValidator(r'^[a-zA-Z0-9_\-]*$',
 
 
 class AuditedModel(models.Model):
+    """
+    Provides `created_at` and `updated_at` fields to indicate when the model
+    was modified.
+    """
     created_at = models.DateTimeField(auto_now_add=True, null=True)
     updated_at = models.DateTimeField(auto_now=True, null=True)
 
@@ -37,6 +41,9 @@ class AuditedModel(models.Model):
 
 
 class System(AuditedModel):
+    """
+    Stateful container for environments.
+    """
     name = models.TextField(unique=True, validators=[alphanumeric])
     domain_name = models.TextField(unique=True, null=True)
 
@@ -56,7 +63,11 @@ class System(AuditedModel):
     @property
     @utils.memoized
     def source(self):
-        # Only one source is used per system for now
+        """
+        Returns the correct source to be used with the system. (Only one
+        source is used per system for now. Multiple source handling may be
+        implemented.)
+        """
         system_sources = sources.get_sources(self)
         if not system_sources:
             raise exceptions.UndefinedSource()
@@ -69,6 +80,10 @@ class System(AuditedModel):
 
 
 class Environment(AuditedModel):
+    """
+    Stateful container for hosts, instances, and groups.
+    """
+
     name = models.TextField(validators=[alphanumeric])
     auto_deploy = models.BooleanField(default=False)
     system = models.ForeignKey('System', related_name='environments')
@@ -80,52 +95,79 @@ class Environment(AuditedModel):
     @property
     @utils.memoized
     def backend(self):
+        """
+        Returns the correct backend to be used with the current environment.
+        """
         return backends.get_backend(self)
 
-    # TODO: make tasks non-concurrent, (celery buckets)
     @task
     def deploy(self, obj):
+        """
+        Deploys any release or source to the environment.
+
+        TODO: Multiple deploy tasks should not be able to run concurrently on
+        a single environment.
+
+        :Parameters:
+          - `obj`: a release or source.
+        """
         log.info('Deploying %s to %s/%s' % (obj, self.system.name, self.name))
 
         if hasattr(obj, 'pull'):
-            deploy = self.save_deploy(current_task)
+            # Object is source
+            deploy = self._save_deploy(current_task)
             self.current_release = None
             self.using_source = True
-        else:
-            deploy = self.save_deploy(current_task, obj)
+        elif hasattr(obj, 'sha'):
+            # Object is release
+            deploy = self._save_deploy(current_task, obj)
             if self.current_release:
                 deploy.existing_snapshot = self.current_release.get_snapshot()
             self.current_release = obj
             self.using_source = False
+        else:
+            raise Exception('unable to deploy object "%s"' % obj)
 
-        snapshot = obj.get_snapshot()
-        with deploy.start(snapshot):
-            if self.using_source:
-                # TODO: if celery is used for deploying instances, app_paths
-                # will have to be saved in order to persist across processes
-                self.app_paths = snapshot.get_app_paths()
-                # Build new images specifically for source
-                snapshot.build_and_push(None, self.system)
-                self.deploy_to_instances()
-            else:
-                self.deploy_to_instances(obj.sha)
-
-        self.save()
+        self._deploy_obj(obj, deploy)
 
     @task
     def autoload(self, source, nodes):
-        log.info('Autoloading %s' % source)
+        """
+        Called indirectly by the `sync_source` signal. Only functions if the
+        environment's backend can autoload.
 
-        # Use stub deploy
-        deploy = Deploy.create(environment=self)
+        :Parameters:
+          - `source`: the source to run build plugins on.
+          - `nodes`: a list of parser nodes that were changed in the autoload.
+        """
+        if self.backend.autoloads:
+            log.info('Autoloading %s' % source)
 
-        source.run_build_plugins(deploy, nodes)
-        node_names = [node.name for node in nodes]
-        for instance in self.instances.all():
-            if instance.node.name in node_names:
-                instance.reload()
+            # Use stub deploy for plugins. This deploy is not saved because it
+            # represents a minor, incremental change.
+            deploy = Deploy.create(environment=self)
 
-    def save_deploy(self, deploy_task, release=None):
+            # Only build plugins are run because, unlike files related to build
+            # plugins like images and assets, changing files related to deploy
+            # plugins will never trigger an autoload.
+            source.run_build_plugins(deploy, nodes)
+            node_names = [node.name for node in nodes]
+            for instance in self.instances.all():
+                if instance.node.name in node_names:
+                    # A simple `reload()` is sufficient to load any file
+                    # changes and restart processes. A `restart()` would have
+                    # been called if the Docker node image were recompiled.
+                    instance.reload()
+
+    def _save_deploy(self, deploy_task, release=None):
+        """
+        Called when the deploy has officially started. A record of the deploy
+        is saved and returned for further usage in the pipeline.
+
+        :Parameters:
+          - `deploy_task`: the celery task performing the deploy.
+          - `release`: the release being deployed.
+        """
         deploy = Deploy.create(
             environment=self,
             existing_release=self.current_release,
@@ -135,7 +177,35 @@ class Environment(AuditedModel):
         deploy.save()
         return deploy
 
-    def deploy_to_instances(self, sha=None):
+    def _deploy_obj(self, obj, deploy):
+        """
+        Deploy a release or source to all instances and hosts in the
+        environment.
+
+        :Parameters:
+          - `obj`: an object assumed to be a release or source.
+          - `deploy`: the corresponding `Deploy` object
+        """
+        snapshot = obj.get_snapshot()
+        with deploy.start(snapshot):
+            if self.using_source:
+                # WARNING: If celery is used for deploying instances, app_paths
+                # will have to be saved in order to persist across processes.
+                # Since instances and hosts are deployed to by threads instead
+                # of separate processes, this is not a concern.
+                self.app_paths = snapshot.get_app_paths()
+                # Build new images for source
+                snapshot.build_and_push(None, self.system)
+                self._deploy_to_instances()
+            else:
+                # Object is release
+                # The release can be deployed immediately since the source
+                # images were compiled and pushed when the release was created.
+                self._deploy_to_instances(obj.sha)
+        self.save()
+
+    def _deploy_to_instances(self, sha=None):
+        # TODO: make tasks non-concurrent, (celery locks)
         batch_size = min(int(math.ceil(self.instances.count() / 2.0)),
                          settings.STRETCH_BATCH_SIZE)
 
@@ -143,6 +213,11 @@ class Environment(AuditedModel):
 
     @classmethod
     def post_save(cls, sender, instance, created, **kwargs):
+        """
+        Adds the environment to the config manager if new. Environment
+        configuration will be saved on every save. This allows the config
+        manager to propagate changes to an environment's `config`.
+        """
         env = instance
         if created:
             env.system.config_manager.add_env(env)
@@ -150,6 +225,9 @@ class Environment(AuditedModel):
 
     @classmethod
     def pre_delete(cls, sender, instance, **kwargs):
+        """
+        Removes the environment from the config manager.
+        """
         env = instance
         env.system.config_manager.remove_env(env)
 

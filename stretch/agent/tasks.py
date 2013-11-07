@@ -62,7 +62,7 @@ def get_task_resources(obj, tasks):
 
             task_func = task.get('task')
             if not task_func:
-                raise TaskException('no task defined for "%s"' % )
+                raise TaskException('no task defined')
 
             task = Task.create({
                 'id': str(uuid.uuid4()),

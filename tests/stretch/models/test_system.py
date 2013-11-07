@@ -19,6 +19,12 @@ class TestSystem(TestCase):
         self.system = models.System(name='bar')
         self.system.source
 
+    @patch('stretch.config_managers.get_config_manager')
+    def test_config_manager(self, get_config_manager):
+        config_manager = Mock()
+        get_config_manager.return_value = config_manager
+        eq_(self.system.config_manager, config_manager)
+
     @patch('stretch.models.System.environments')
     @patch('stretch.models.System.source')
     @patch('stretch.models.Environment.backend')
