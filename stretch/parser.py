@@ -258,7 +258,7 @@ class Container(object):
             # Generate tag
             if self.parent:
                 # Base container
-                self.tag = 'stretch_base/sys%s' % system.pk
+                self.tag = 'stretch_base/%s' % system.pk
             elif release:
                 # Node container
                 self.tag = node.get_image()

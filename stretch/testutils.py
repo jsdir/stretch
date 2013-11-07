@@ -1,6 +1,6 @@
 import os
 from cStringIO import StringIO
-from mock import Mock, MagicMock
+from mock import Mock, MagicMock, patch
 
 
 class MockFileSystem(object):
@@ -84,3 +84,7 @@ def mock_attr(**kwargs):
 
 def check_items_equal(l1, l2):
     return len(l1) == len(l2) and sorted(l2) == sorted(l2)
+
+
+def patch_settings(key, value):
+    return patch('django.conf.settings.%s' % key, value)

@@ -349,7 +349,7 @@ class Node(AuditedModel):
 
     def get_image(self, local=False, private=False):
         if local:
-            prefix = stretch_agent
+            prefix = 'stretch_agent'
         elif private:
             prefix = settings.STRETCH_REGISTRY_PRIVATE_URL
         else:
@@ -366,12 +366,16 @@ class Instance(AuditedModel):
 
     @classmethod
     def create(cls, env, host, node):
+        """
+        This should be able to create an instance for an environment without a
+        release.
+        """
         instance = cls(environment=env, host=host, node=node)
         instance.save()
         instance.host.agent.add_instance(instance)
 
-    # CHANGE
-    def get_endpoint(self):
+    def get_endpoint(self, port_name):
+        self.environment
         # Get the instance's current endpoint from the config manager
         pass
 
@@ -422,6 +426,11 @@ class LoadBalancer(models.Model):
 
 
 class Host(AuditedModel):
+    """
+    Hosts can either be managed or unmanaged. Managed hosts are created when a
+    group is scaled, but unmanaged hosts have no parent group since they are
+    created and provisioned manually.
+    """
     fqdn = models.TextField(unique=True)
     name = models.TextField(unique=True)
     hostname = models.TextField()
@@ -431,8 +440,14 @@ class Host(AuditedModel):
     address = models.GenericIPAddressField()
 
     @classmethod
-    def create(cls, env, group=None):
-        # No group means unmanaged host
+    def create(cls, env, group):
+        """
+        Creates, provisions, and saves a new host.
+
+        :Parameters:
+          - `env`: the host's environment.
+          - `group`: the host's group.
+        """
         domain_name = env.system.domain_name
         hostname = (utils.generate_random_hex(8) if group
                     else fqdn.replace(domain_name, ''))
@@ -441,24 +456,26 @@ class Host(AuditedModel):
         host = cls(fqdn=fqdn, name=name, hostname=hostname,
                    domain_name=domain_name, environment=env, group=group)
 
-        if group:
-            # Managed host
-            if not env.backend:
-                raise exceptions.UndefinedBackend()
-            host.address = env.backend.create_host(host)
-
+        if not env.backend:
+            raise exceptions.UndefinedBackend()
+        host.address = env.backend.create_host(host)
         host.finish_provisioning()
-        log.info('Saving host...')
         host.save()
-
-        if group:
-            # Managed host
-            log.info('Creating new instance for host...')
-            host.create_instance(group.node)
+        log.info('Creating new instance for host...')
+        host.create_instance(group.node)
 
         return host
 
-    def pull_nodes(self, sha=None, group_pool):
+    @classmethod
+    def create_unmanaged(cls, env, name, fqdn):
+        domain_name = env.system.domain_name
+        host = cls(fqdn=fqdn, name=name, hostname=hostname,
+                   domain_name=domain_name, environment=env)
+        host.finish_provisioning()
+        host.save()
+        return host
+
+    def pull_nodes(self, group_pool, sha=None):
         nodes = []
         for instance in self.instances.all():
             if instance.node not in nodes:
@@ -510,18 +527,6 @@ class Host(AuditedModel):
                 log.debug(result)
                 break
 
-    def add_instance(self, instance):
-        release = self.environment.current_release
-        if not release and not self.environment.using_source:
-            raise Exception('environment has no current release')
-            # TODO: be able to add instance that wait for a deploy instead of
-            # having to use a deploy at creation time
-        sha = None
-        if release:
-            sha = release.sha
-        utils.wait(self.instance_call(instance, 'stretch.add_instance',
-                                      instance.get_deploy_options(sha)))
-
     def call(self, *args, **kwargs):
         return salt_client().cmd(self.fqdn, *args, **kwargs)
 
@@ -529,13 +534,6 @@ class Host(AuditedModel):
     @utils.memoized
     def agent(self):
         return AgentClient(self.address)
-
-    @classmethod
-    def post_save(cls, sender, instance, created, **kwargs):
-        host = instance
-        if created and not host.group:
-            log.info('Adding managed host to config manager...')
-            host.environment.system.config_manager.add_managed_host(host)
 
     @classmethod
     def pre_delete(cls, sender, instance, **kwargs):
@@ -549,12 +547,14 @@ class Host(AuditedModel):
             host.environment.system.config_manager.remove_managed_host(host)
 
 
-model_signals.post_save.connect(Host.post_save, sender=Host)
 model_signals.pre_delete.connect(Host.pre_delete, sender=Host)
 
 
 class Group(AuditedModel):
-    # TODO: enforce host -> single container with self.node policy
+    """
+    A group is a collection of homogeneous hosts. Each host in a group runs one
+    instance that runs the the node associated with the group.
+    """
     name = models.TextField(validators=[alphanumeric])
     environment = models.ForeignKey('Environment', related_name='groups')
     minimum_nodes = models.IntegerField(default=1)
@@ -572,17 +572,6 @@ class Group(AuditedModel):
         hosts = self.hosts.all()[0:amount]
         group(self._delete_host.s(host.pk) for host in hosts)().get()
 
-    def create_load_balancer(self, port, host_port, protocol):
-        if self.hosts.count() > 0:
-            raise Exception('no hosts in group')
-        if not self.load_balancer:
-            self.load_balancer = LoadBalancer(port=port, host_port=host_port,
-                                              protocol=protocol)
-            self.load_balancer.activate_with_hosts(self.hosts.all())
-            self.load_balancer.save()
-        else:
-            raise Exception('group already has a load balancer')
-
     def scale_to(self, amount):
         relative_amount = amount - self.hosts.count()
         if relative_amount > 0:
@@ -598,6 +587,17 @@ class Group(AuditedModel):
         if not valid:
             raise Exception('invalid scaling amount')
 
+    def create_load_balancer(self, port, host_port, protocol):
+        if self.hosts.count() > 0:
+            raise Exception('no hosts in group')
+        if not self.load_balancer:
+            self.load_balancer = LoadBalancer(port=port, host_port=host_port,
+                                              protocol=protocol)
+            self.load_balancer.activate_with_hosts(self.hosts.all())
+            self.load_balancer.save()
+        else:
+            raise Exception('group already has a load balancer')
+
     @property
     def batch_size(self):
         return min(int(math.ceil(self.instances.count() / 2.0)),
@@ -605,16 +605,11 @@ class Group(AuditedModel):
 
     @task
     def _create_host(self):
-        host = Host.create(self.environment, self)
-        if self.load_balancer:
-            self.load_balancer.add_host(host)
+        Host.create(self.environment, self)
 
     @task
     def _delete_host(self, host_id):
-        host = Host.objects.get(pk=host_id)
-        if self.load_balancer:
-            self.load_balancer.remove_host(host)
-        host.delete()
+        Host.objects.get(pk=host_id).delete()
 
 
 class Deploy(AuditedModel):
