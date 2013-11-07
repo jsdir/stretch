@@ -6,7 +6,6 @@ import collections
 import gnupg
 import docker
 import logging
-from distutils import dir_util
 from django.conf import settings
 from StringIO import StringIO
 from contextlib import contextmanager
@@ -114,35 +113,12 @@ class Snapshot(object):
             if nodes and plugin.parent in nodes:
                 plugin.post_deploy(deploy)
 
-    def copy_to_buffer(self, path):
-        dir_util.copy_tree(self.path, path)
-
     def get_app_paths(self):
         app_paths = {}
         for node in self.nodes:
             if node.app_path:
                 app_paths[node.name] = node.app_path
         return app_paths
-
-    @contextmanager
-    def mount_templates(self, path):
-        """
-        path/
-            node.name/
-                template1
-                template2
-            node.name/
-                template1
-                template2
-        """
-        for node in self.nodes:
-            dest_path = os.path.join(path, node.name)
-            utils.clear_path(dest_path)
-            templates_path = os.path.join(node.container.path, 'templates')
-            if os.path.exists(templates_path):
-                dir_util.copy_tree(templates_path, dest_path)
-        yield
-        utils.clear_path(path)
 
 
 class Node(object):

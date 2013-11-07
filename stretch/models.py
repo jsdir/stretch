@@ -7,6 +7,7 @@ import time
 import jsonfield
 import uuidfield
 from contextlib import contextmanager
+from distutils import dir_util
 from django.db import models
 from django.db.models import signals as model_signals
 from django.dispatch import receiver
@@ -506,12 +507,30 @@ class Deploy(AuditedModel):
         self.snapshot.run_pre_deploy_plugins(self)
         template_path = os.path.join(settings.STRETCH_CACHE_DIR, 'templates',
                                      str(self.environment.pk))
+
         with self.snapshot.mount_templates(template_path):
             yield
+
+        utils.clear_path(template_path)
         self.snapshot.run_post_deploy_plugins(self)
         utils.delete_path(self.snapshot.path)
         if self.existing_snapshot:
             utils.delete_path(self.existing_snapshot.path)
+
+    @contextmanager
+    def mount_templates(self, snapshot, path):
+        utils.clear_path(path)
+        for node in snapshot.nodes:
+            try:
+                node_obj = self.environment.system.nodes.get(name=node.name)
+            except Node.DoesNotExist:
+                pass
+            else:
+                dest_path = os.path.join(path, str(node_obj.pk))
+                utils.clear_path(dest_path)
+                templates_path = os.path.join(node.container.path, 'templates')
+                if os.path.exists(templates_path):
+                    dir_util.copy_tree(templates_path, dest_path)
 
 
 @receiver(signals.sync_source)

@@ -2,7 +2,7 @@ import os
 from flask.ext.restful import reqparse
 
 from stretch import utils, config_managers
-from stretch.agent import resources, TaskException, nodes
+from stretch.agent import resources, TaskException, nodes, agent_dir
 
 
 config_manager = config_managers.EtcdConfigManager('127.0.0.1:4001')
@@ -50,7 +50,7 @@ class Instance(resources.PersistentObject):
             raise TaskException("container's node has not been pulled yet")
 
         # Compile templates for new run
-        self.compile_templates()
+        self.compile_templates(node)
 
         # Run container
         cmd = ['docker', 'run', '-d'] + self.get_run_args(node)
@@ -93,24 +93,24 @@ class Instance(resources.PersistentObject):
         return mounts
 
     def get_templates_path(self):
-        return os.path.join(agent_dir, 'templates', self.data['_id'])
+        return os.path.join(agent_dir, 'templates', 'instances',
+                            self.data['_id'])
 
-    def compile_templates(self):
-        node = self.get_node()
-        if not node:
-            raise TaskException("container's node does not exist")
+    def compile_templates(self, node):
         templates_path = self.get_templates_path()
 
         # Remove all contents before adding new templates
         utils.clear_path(templates_path)
 
         # Walk through node templates, render, and save to instance templates.
-        node_templates_path = self.get_node().get_templates_path()
-        for dirpath, dirnames, filenames in os.walk(node_templates_path):
-            rel_dir = os.path.relpath(dirpath, node_templates_path)
-            for file_name in filenames:
-                self.compile_template(os.path.normpath(os.path.join(rel_dir,
-                    file_name)), node_templates_path, templates_path, node)
+        node_templates_path = node.get_templates_path()
+        if os.path.exists(node_templates_path):
+            for dirpath, dirnames, filenames in os.walk(node_templates_path):
+                rel_dir = os.path.relpath(dirpath, node_templates_path)
+                for file_name in filenames:
+                    self.compile_template(os.path.normpath(os.path.join(
+                        rel_dir, file_name)), node_templates_path,
+                        templates_path, node)
 
     def compile_template(self, rel_path, src, dest, node):
         src_path = os.path.join(src, rel_path)

@@ -9,6 +9,12 @@ class AgentClient(object):
     def __init__(self, host, port=settings.STRETCH_AGENT_PORT):
         self.base_url = 'https://%s:%s' % (host, port)
 
+    def add_node(self, node):
+        requests.post(self.get_url('nodes'), data={'id': str(node.pk)})
+
+    def remove_node(self, node):
+        requests.delete(self.get_url('nodes/%s' % str(node.pk)))
+
     def pull(self, node, sha=None):
         env = self.host.environment
         ports = dict([(port.name, port.number) for port in node.ports.all()])
@@ -21,12 +27,12 @@ class AgentClient(object):
             'sha': sha,
             'app_path': app_path,
             'ports': json.dumps(ports),
+            'env_id': str(env.pk),
             'env_name': env.name,
             'image': node.get_image(local=True, private=True)
         })
 
     def add_instance(self, instance):
-        config_manger = self.host.environment.system.config_manger
         requests.post(self.get_url('instances'), data={
             'id': str(instance.pk),
             'node_id': str(instance.node.pk),
