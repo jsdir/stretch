@@ -428,7 +428,7 @@ class LoadBalancer(models.Model):
 
     Replicating instance endpoints to the load balancer.
     """
-    id = uuidfield.UUIDField(auto=True, primary_key=True)
+    id = uuidfield.UUIDField(primary_key=True)
     group = models.OneToOneField('Group', primary_key=True)
     protocol = models.CharField(max_length=10, choices=(
         ('http', 'http'),
