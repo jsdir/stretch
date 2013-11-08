@@ -1,4 +1,5 @@
 import os
+import json
 from flask.ext.restful import reqparse
 
 from stretch import utils, config_managers
@@ -6,16 +7,21 @@ from stretch.agent import resources, TaskException, nodes, agent_dir
 
 
 config_manager = config_managers.EtcdConfigManager('127.0.0.1:4001')
+try:
+    agent_host = os.environ['AGENT_HOST']
+except KeyError:
+    raise Exception('"AGENT_HOST" environment variable not set')
 
 
 class Instance(resources.PersistentObject):
     name = 'instance'
-    attrs = {'cid': None}
+    attrs = {'cid': None, 'endpoint': None}
 
     @classmethod
     def create(cls, args):
         super(Instance, self).create(args)
-        # TODO: have start/stop behave as individual tasks
+        # TODO: have start/stop behave as individual tasks, use HTTP request
+        # blocking
         self.start()
 
     def delete(self):
@@ -27,9 +33,9 @@ class Instance(resources.PersistentObject):
         if not self.running:
             raise TaskException('container is not running')
 
-        code = run_cmd(['lxc-attach', '-n', self.data['cid'], '--',
+        code = utils.run_cmd(['lxc-attach', '-n', self.data['cid'], '--',
                         '/bin/bash', os.path.join(container_dir, 'files',
-                        'autoload.sh')])[1]
+                        'autoload.sh')], allow_errors=True)[1]
 
         if code != 0:
             # No user-defined autoload.sh or script wants to reload; restart.
@@ -54,18 +60,18 @@ class Instance(resources.PersistentObject):
 
         # Run container
         cmd = ['docker', 'run', '-d'] + self.get_run_args(node)
-        self.data['cid'] = run_cmd(cmd)[0].strip()
-        self.save()
+        cid = utils.run_cmd(cmd)[0].strip()
 
         # Get ports
         ports = {}
         for name, port in self.data['ports'].iteritems():
             # TODO: Use API when it can handle port mapping
-            host = run_cmd(['docker', 'port', self.data['cid'], str(port)])
+            host = utils.run_cmd(['docker', 'port', cid, str(port)])
             ports[name] = int(host.split(':')[1])
 
-        # Add to config
-        config_manager.set_dict('%s/ports' % self.data['config_key'], ports)
+        self.data['cid'] = cid
+        self.data['endpoint'] = json.dumps({'a': agent_host, 'ports': ports})
+        self.save()
 
     def stop(self):
         if not self.running:
@@ -75,9 +81,13 @@ class Instance(resources.PersistentObject):
         config_manager.delete(self.data['config_key'])
 
         # Stop container
-        run_cmd(['docker', 'stop', self.data['cid']])
+        utils.run_cmd(['docker', 'stop', self.data['cid']])
         self.data['cid'] = None
+        self.data['endpoint'] = None
         self.save()
+
+    def set_endpoint(self):
+        config_manager.set(self.data['config_key'], self.data['endpoint'])
 
     def get_node(self):
         if self.data['node_id']:

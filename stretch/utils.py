@@ -174,10 +174,19 @@ def wait(is_finished, interval=2.0):
         time.sleep(interval)
 
 
-def run_cmd(cmd):
+def run_cmd(cmd, allow_errors=False):
     p = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     stdout, stderr = p.communicate()
+    if p.returncode != 0 and not allow_errors:
+        raise Exception(stderr)
     return stdout, p.returncode
+
+
+def require_options(options, required_options):
+    for required_option in required_options:
+        if required_option not in options:
+            raise KeyError('option "%s" not found' % required_option)
+    return options
 
 
 def generate_memorable_name():  # pragma: no cover

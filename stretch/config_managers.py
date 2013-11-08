@@ -43,6 +43,11 @@ class ConfigManager(object):
         return '/'.join([self.get_key(host.environment), parent_key, parent_id,
                          str(instance.pk)])
 
+    def get_lb_key(self, lb):
+        group = lb.group
+        return '/'.join([self.get_key(group.environment), 'groups',
+                         str(group.pk), 'lb'])
+
     def get_key(self, env):
         return '/%s/envs/%s' % (env.system.pk, env.pk)
 

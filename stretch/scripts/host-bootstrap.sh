@@ -50,6 +50,9 @@ echo "log_level_logfile: debug" >> /etc/salt/minion
 echo "127.0.0.1 4001 {{ etcd_host_address }} {{ etcd_host_port }}" >> /etc/rinetd.conf
 service rinetd restart
 
+# TODO: set AGENT_HOST env variable to the host's returned (private) ip passed
+# by the template
+
 # Restart salt-minion
 service salt-minion restart
 

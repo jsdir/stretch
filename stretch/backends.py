@@ -7,6 +7,7 @@ from django.conf import settings
 
 import stretch
 from stretch.salt_api import caller_client
+from stetch.agent.loadbalancers import LoadBalancer
 from stretch import utils
 
 
@@ -28,16 +29,10 @@ class Backend(object):
     def delete_host(self, host):
         raise NotImplementedError
 
-    def lb_add_host(self, lb, host):
+    def lb_add_endpoint(self, lb, host):
         raise NotImplementedError
 
-    def lb_remove_host(self, lb, host):
-        raise NotImplementedError
-
-    def lb_activate_host(self, lb, host):
-        raise NotImplementedError
-
-    def lb_deactivate_host(self, lb, host):
+    def lb_remove_endpoint(self, lb, host):
         raise NotImplementedError
 
     def create_lb(self, lb, hosts):
@@ -60,31 +55,22 @@ class DockerBackend(Backend):
         self.autoloads = True
 
     def create_host(self, host):
-        self.call_salt('stretch.create_host', host.fqdn)
-        return None
+        return '127.0.0.1'
 
     def delete_host(self, host):
-        self.call_salt('stretch.delete_host', host.fqdn)
+        pass
 
-    def lb_add_host(self, lb, host):
-        self.call_salt('stretch.lb_add_host', lb.backend_id, host.fqdn)
+    def lb_add_endpoint(self, lb, host, port):
+        LoadBalancer(lb.backend_id).add_endpoint(host, port)
 
-    def lb_remove_host(self, lb, host):
-        self.call_salt('stretch.lb_remove_host', lb.backend_id, host.fqdn)
+    def lb_remove_endpoint(self, lb, host, port):
+        LoadBalancer(lb.backend_id).add_endpoint(host, port)
 
-    def lb_activate_host(self, lb, host):
-        self.call_salt('stretch.lb_activate_host', lb.backend_id, host.fqdn)
-
-    def lb_deactivate_host(self, lb, host):
-        self.call_salt('stretch.lb_deactivate_host', lb.backend_id, host.fqdn)
-
-    def create_lb(self, lb, hosts):
-        self.call_salt('stretch.create_lb', [host.fqdn for host in hosts])
-        # return lb_id, lb_address
-        # TODO: return lb address
+    def create_lb(self, lb):
+        LoadBalancer.create({'id': lb.pk})
 
     def delete_lb(self, lb):
-        self.call_salt('stretch.delete_lb', lb.backend_id)
+        LoadBalancer(lb.pk).delete()
 
     def call_salt(self, *args, **kwargs):
         caller_client().function(*args, **kwargs)
@@ -212,63 +198,62 @@ class RackspaceBackend(Backend):
             if server.name == host.fqdn:
                 server.delete()
 
-    def create_lb(self, lb, hosts):
-        if not hosts:
-            raise Exception('no hosts defined for load balancer')
-
-        vip = self.clb.VirtualIP(type='PUBLIC')
-        nodes = [self.get_node(host, lb) for host in hosts]
+    def create_lb(self, lb):
+        port = 80
 
         lb_obj = self.clb.create(
-            str(utils.generate_random_hex(8)),
-            port=lb.port,
-            protocol=lb.protocol,
-            nodes=nodes,
-            virtual_ips=[vip],
+            lb.pk,
+            port=port,
+            protocol=lb.protocol.upper(),
+            condition='ENABLED',
+            virtual_ips=[self.clb.VirtualIP(type='PUBLIC')],
             algorithm='LEAST_CONNECTIONS'
         )
 
         pyrax.utils.wait_for_build(lb_obj)
-
         if lb_obj.status != 'ACTIVE':
             raise Exception('failed to create load balancer')
 
-        return str(lb_obj.id), lb_obj.sourceAddresses['ipv4Public']
+        if lb.options.get('sslTermination'):
+            args = utils.require_options(lb.options, (
+                'securePort',
+                'secureTrafficOnly',
+                'certificate',
+                'privatekey'
+            ))
+            lb_obj.add_ssl_termination(
+                securePort=args['securePort'],
+                enabled=True,
+                secureTrafficOnly=args['secureTrafficOnly'],
+                certificate=args['certificate'],
+                privatekey=args['privatekey']
+            )
+
+        return lb_obj.sourceAddresses['ipv4Public'], port
 
     def delete_lb(self, lb):
-        self.clb.get(int(lb.backend_id)).delete()
+        self.clb.get(lb.pk).delete()
 
-    def lb_add_host(self, lb, host):
-        lb_obj = self.clb.get(int(lb.backend_id))
-        node = self.get_node(host, lb)
+    def lb_add_endpoint(self, lb, host, port):
+        lb_obj = self.clb.get(lb.pk)
+        node = self.get_node(host, port)
         lb_obj.add_nodes([node])
         pyrax.utils.wait_for_build(lb_obj)
 
-    def lb_remove_host(self, lb, host):
-        lb_obj = self.clb.get(int(lb.backend_id))
+    def lb_remove_endpoint(self, lb, host, port):
+        lb_obj = self.clb.get(lb.pk)
         try:
-            node = [n for n in lb_obj.nodes if n.address == host.address][0]
+            node = [n for n in lb_obj.nodes if n.address == host
+                                            and n.port == port][0]
         except KeyError:
             raise Exception('failed to get node from load balancer')
         node.delete()
         pyrax.utils.wait_for_build(lb_obj)
 
-    def lb_activate_host(self, lb, host):
-        lb_obj = self.clb.get(int(lb.backend_id))
-        node = [n for n in lb_obj.nodes if n.address == host.address][0]
-        node.condition = 'ENABLED'
-        node.update()
-
-    def lb_deactivate_host(self, lb, host):
-        lb_obj = self.clb.get(int(lb.backend_id))
-        node = [n for n in lb_obj.nodes if n.address == host.address][0]
-        node.condition = 'DISABLED'
-        node.update()
-
-    def get_node(self, host, lb):
+    def get_node(self, host, port):
         return self.clb.Node(
-            address=host.address,
-            port=lb.host_port,
+            address=host,
+            port=port,
             condition='ENABLED'
         )
 

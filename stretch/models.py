@@ -4,6 +4,7 @@ import logging
 import tarfile
 import json
 import time
+import uuid
 import jsonfield
 import uuidfield
 from contextlib import contextmanager
@@ -370,20 +371,32 @@ class Instance(AuditedModel):
         This should be able to create an instance for an environment without a
         release.
         """
+        # TODO: what if node hasn't been pushed to or if environment has no
+        # release yet?
         instance = cls(environment=env, host=host, node=node)
         instance.save()
         instance.host.agent.add_instance(instance)
 
+    """
     def get_endpoint(self, port_name):
         self.environment
         # Get the instance's current endpoint from the config manager
         pass
+    """
 
     def reload(self):
+        """
+        Since reload is only used in development, there is no need to update
+        the load balancer.
+        """
         self.host.agent.reload_instance(self)
 
     def restart(self):
+        # Remove instance endpoint from load balancer.
+        # Send signal flag to the receiver to ignore calls temporarily from
+        # this instance and to remove the instance (RPC). Block until finished.
         self.host.agent.restart_instance(self)
+        # Unblock
 
     @property
     def config_key(self):
@@ -391,38 +404,76 @@ class Instance(AuditedModel):
 
     @classmethod
     def pre_delete(cls, sender, instance, **kwargs):
+        # Remove instance endpoint from load balancer.
+        # Send signal flag to the receiver to ignore calls temporarily from
+        # this instance and to remove the instance (RPC). Block until finished.
         instance.host.agent.remove_instance(instance)
+        # Unblock
 
 
 model_signals.pre_delete.connect(Instance.pre_delete, sender=Instance)
 
 
 class LoadBalancer(models.Model):
+    """
+    Load balancers adhere to a `protocol`
+    enum(http, tcp) for now, load balancer is responsible for implementing these.
+
+
+    have a dynamic endpoint that is replicated to the configuration manager.
+    Backend returns an public address and port. The port is dynamically set.
+    For rackspace, this is set until the load balancer is deleted. For a virtual
+    loadbalancer is the agent, this will change on system startup. Agent will
+    replace the load balancer's endpoint at each startup.
+
+    Replicating instance endpoints to the load balancer.
+    """
     id = uuidfield.UUIDField(auto=True, primary_key=True)
-    host_port = models.IntegerField()
-    #Enum
-    #protocol = models.TextField(choice=())
+    group = models.OneToOneField('Group', primary_key=True)
+    protocol = models.CharField(max_length=10, choices=(
+        ('http', 'http'),
+        ('tcp', 'tcp')
+    ))
     address = models.GenericIPAddressField()
-    backend_id = models.CharField(max_length=32, unique=True)
+    options = jsonfield.JSONField(default={})
 
-    def activate_with_hosts(self, hosts):
-        self.address = self.get_backend().create_lb(self, hosts, str(self.pk))
-
-    def get_backend(self):
-        backend = self.group.environment.backend
-        if not backend:
-            raise Exception('no backend defined')
-        return self.group.environment.backend
-
-    def add_host(self, host):
-        self.get_backend().lb_add_host(self, host)
-
-    def remove_host(self, host):
-        self.get_backend().lb_remove_host(self, host)
+    @classmethod
+    def create(cls, group, port_name, protocol, options={}):
+        """
+        :Parameters:
+          - `options`: {
+                'securePort': 443,
+                'sslTermination': True,
+                'secureTrafficOnly': False,
+                'certificate': '<cert>',
+                'privatekey': '<key>'
+            }
+        """
+        lb_id = uuid.uuid4().hex
+        lb = cls(id=lb_id, group=group, port_name=port_name, protocol=protocol,
+                 options=options)
+        host, port = self.backend.create_lb(self)
+        # Add key to config
+        self.group.environment.system.config_manager.set(self.config_key,
+            json.dumps({'a': host, 'port': port}))
+        lb.save()
 
     def delete(self):
-        self.get_backend().delete_lb(self)
+        # Remove key from config
+        self.group.environment.system.config_manager.delete(self.config_key)
+        self.backend.delete_lb(self)
         super(LoadBalancer, self).delete()
+
+    @property
+    def backend(self):
+        backend = self.group.environment.backend
+        if not backend:
+            raise Exception('no backend defined for environment')
+        return backend
+
+    @property
+    def config_key(self):
+        return self.environment.system.config_manger.get_lb_key(self)
 
 
 class Host(AuditedModel):
@@ -435,7 +486,6 @@ class Host(AuditedModel):
     name = models.TextField(unique=True)
     hostname = models.TextField()
     domain_name = models.TextField(null=True)
-    group = models.ForeignKey('Group', related_name='hosts', null=True)
     environment = models.ForeignKey('Environment', related_name='hosts')
     address = models.GenericIPAddressField()
 
@@ -587,14 +637,10 @@ class Group(AuditedModel):
         if not valid:
             raise Exception('invalid scaling amount')
 
-    def create_load_balancer(self, port, host_port, protocol):
-        if self.hosts.count() > 0:
-            raise Exception('no hosts in group')
+    def create_load_balancer(self, port_name, protocol, options={}):
         if not self.load_balancer:
-            self.load_balancer = LoadBalancer(port=port, host_port=host_port,
-                                              protocol=protocol)
-            self.load_balancer.activate_with_hosts(self.hosts.all())
-            self.load_balancer.save()
+            self.load_balancer = LoadBalancer.create(group=self,
+                port_name=port_name, protocol=protocol, options=options)
         else:
             raise Exception('group already has a load balancer')
 
