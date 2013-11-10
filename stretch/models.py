@@ -9,15 +9,15 @@ import jsonfield
 import uuidfield
 from contextlib import contextmanager
 from distutils import dir_util
+from gevent import pool
+from celery import current_task, group
+from celery.contrib.methods import task
+
 from django.db import models
 from django.db.models import signals as model_signals
 from django.dispatch import receiver
 from django.core.validators import RegexValidator
 from django.conf import settings
-from gevent.pool import Pool
-from gevent.pool import Group as GeventGroup
-from celery import current_task, group
-from celery.contrib.methods import task
 
 from stretch import (signals, sources, utils, backends, parser, exceptions,
                      config_managers)
@@ -25,11 +25,9 @@ from stretch.salt_api import salt_client, wheel_client, runner_client
 
 
 log = logging.getLogger('stretch')
-config_manager = config_managers.get_config_manager()
 alphanumeric = RegexValidator(r'^[a-zA-Z0-9_\-]*$',
                               'Only alphanumeric characters, underscores, and '
                               'hyphens are allowed.')
-
 
 class AuditedModel(models.Model):
     """
@@ -245,18 +243,18 @@ class Environment(AuditedModel):
           being deployed.
         """
 
-        group_pools = {None: GeventGroup()}
+        group_pools = {None: pool.Group()}
 
         for group in self.groups.all():
-            group_pools[group] = Pool(group.batch_size)
+            group_pools[group] = pool.Pool(group.batch_size)
 
-        host_pool = Pool(settings.STRETCH_BATCH_SIZE)
+        host_pool = pool.Pool(settings.STRETCH_BATCH_SIZE)
         for host in self.hosts.all():
             if host.group in group_pools:
                 group_pool = group_pools[host.group]
-            host_pool.spawn(host.pull_nodes, sha, group_pool)
+            host_pool.spawn(host.pull_nodes, group_pool, sha)
 
-        [pool.join() for pool in group_pools.values()]
+        [p.join() for p in group_pools.values()]
 
     @classmethod
     def post_save(cls, sender, instance, created, **kwargs):
@@ -284,13 +282,26 @@ model_signals.pre_delete.connect(Environment.pre_delete, sender=Environment)
 
 
 class Release(AuditedModel):
+    """
+    A system state that can be deployed to environments, archived, and rolled
+    back to.
+    """
     name = models.TextField()
     sha = models.CharField('SHA', max_length=28)
     system = models.ForeignKey('System', related_name='releases')
     unique_together = ('system', 'name', 'sha')
+    archive_name = 'snapshot.tar.gz'
 
     @classmethod
     def create(cls, path, system):
+        """
+        Creates, and processes, and archives a release. Emits a
+        `release_created` signal upon completion.
+
+        :Parameters:
+          - `path`: the path to create the release from.
+          - `system`: the system to associate the release with.
+        """
         release = cls(
             name=utils.generate_memorable_name(),
             sha=utils.generate_random_hex(28),
@@ -305,11 +316,10 @@ class Release(AuditedModel):
 
         # Build release from snapshot
         # Archive the release
-        release_dir = release.get_data_dir()
-        utils.clear_path(release_dir)
+        utils.clear_path(release.data_dir)
 
         # Tar release buffer
-        tar_path = os.path.join(release_dir, 'snapshot.tar.gz')
+        tar_path = os.path.join(release.data_dir, self.archive_name)
         tar_file = tarfile.open(tar_path, 'w:gz')
         tar_file.add(tmp_path, '/')
         tar_file.close()
@@ -326,29 +336,58 @@ class Release(AuditedModel):
         return release
 
     def get_snapshot(self):
-        tar_path = os.path.join(self.get_data_dir(), 'snapshot.tar.gz')
+        """
+        Extracts the release and returns a Snapshot.
+
+        TODO: clean up the temporary path when finished.
+        """
+        tar_path = os.path.join(self.data_dir, self.archive_name)
         tmp_path = utils.temp_dir()
         tar_file = tarfile.open(tar_path)
         tar_file.extractall(tmp_path)
         tar_file.close()
         return parser.Snapshot(tmp_path)
 
-    def get_data_dir(self):
+    @property
+    def data_dir(self):
+        """
+        Returns the archive directory for the release.
+        """
         return os.path.join(settings.STRETCH_DATA_DIR, 'releases', self.sha)
 
 
 class Port(AuditedModel):
+    """
+    A name:number port binding for Nodes.
+
+    The stretch agent dynamically maps
+    the ports of running containers. Having a name for a port allows one to
+    choose between multiple port in a single endpoint in config.
+    """
     node = models.ForeignKey('Node', related_name='ports')
     name = models.TextField(validators=[alphanumeric])
     number = models.IntegerField()
 
 
 class Node(AuditedModel):
+    """
+    Node database abstraction that allows users to bind ports and their names.
+    """
     name = models.TextField(validators=[alphanumeric])
     system = models.ForeignKey('System', related_name='nodes')
     unique_together = ('system', 'name')
 
     def get_image(self, local=False, private=False):
+        """
+        Returns the current image url for a node. Images may be stored locally,
+        or may already be pushed to remote registries. The parameters will
+        determine the image url.
+
+        :Parameters:
+          - `local`: `True` if the image is on the same machine as the stretch
+          controller.
+          - `private`: `True` if the image uses the registry's private url.
+        """
         if local:
             prefix = 'stretch_agent'
         elif private:
@@ -357,10 +396,25 @@ class Node(AuditedModel):
             prefix = settings.STRETCH_REGISTRY_PUBLIC_URL
         return '%s/sys%s/%s' % (prefix, self.system.pk, self.name)
 
+    """
+    TODO: Clean up deleted nodes here and when a host is deleted. An unmanaged
+    host may still have cached images.
+
+    @classmethod
+    def pre_delete(cls, sender, instance, **kwargs):
+        node = instance
+        # Remove node from all host agents.
+        instance.host.agent.remove_node(instance)
+
+    model_signals.pre_delete.connect(Node.pre_delete, sender=Node)
+    """
+
 
 class Instance(AuditedModel):
+    """
+    A running instance of a node.
+    """
     id = uuidfield.UUIDField(auto=True, primary_key=True)
-
     environment = models.ForeignKey('Environment', related_name='instances')
     host = models.ForeignKey('Host', related_name='instances')
     node = models.ForeignKey('Node', related_name='instances')
@@ -368,21 +422,16 @@ class Instance(AuditedModel):
     @classmethod
     def create(cls, env, host, node):
         """
-        This should be able to create an instance for an environment without a
-        release.
+        Creates an instance through the host's agent.
+
+        :Parameters:
+          - `env`: the instance's environment.
+          - `host`: the instance's host.
+          - `node`: the instance's node.
         """
-        # TODO: what if node hasn't been pushed to or if environment has no
-        # release yet?
         instance = cls(environment=env, host=host, node=node)
         instance.save()
         instance.host.agent.add_instance(instance)
-
-    """
-    def get_endpoint(self, port_name):
-        self.environment
-        # Get the instance's current endpoint from the config manager
-        pass
-    """
 
     def reload(self):
         """
@@ -392,6 +441,11 @@ class Instance(AuditedModel):
         self.host.agent.reload_instance(self)
 
     def restart(self):
+        """
+        When the agent restarts an instance, it restarts with the newest
+        revision of the node. Restarting should take place after the host pulls
+        its nodes.
+        """
         # Remove instance endpoint from load balancer.
         # Send signal flag to the receiver to ignore calls temporarily from
         # this instance and to remove the instance (RPC). Block until finished.
@@ -404,6 +458,9 @@ class Instance(AuditedModel):
 
     @classmethod
     def pre_delete(cls, sender, instance, **kwargs):
+        """
+        Deletes the instance through the host's agent.
+        """
         # Remove instance endpoint from load balancer.
         # Send signal flag to the receiver to ignore calls temporarily from
         # this instance and to remove the instance (RPC). Block until finished.
@@ -429,12 +486,11 @@ class LoadBalancer(models.Model):
     Replicating instance endpoints to the load balancer.
     """
     id = uuidfield.UUIDField(primary_key=True)
-    group = models.OneToOneField('Group', primary_key=True)
+    port_name = models.TextField(validators=[alphanumeric])
     protocol = models.CharField(max_length=10, choices=(
         ('http', 'http'),
         ('tcp', 'tcp')
     ))
-    address = models.GenericIPAddressField()
     options = jsonfield.JSONField(default={})
 
     @classmethod
@@ -450,19 +506,60 @@ class LoadBalancer(models.Model):
             }
         """
         lb_id = uuid.uuid4().hex
-        lb = cls(id=lb_id, group=group, port_name=port_name, protocol=protocol,
+        lb = cls(id=lb_id, port_name=port_name, protocol=protocol,
                  options=options)
-        host, port = self.backend.create_lb(self)
+        lb.group = group
+        host, port = lb.backend.create_lb(lb)
         # Add key to config
-        self.group.environment.system.config_manager.set(self.config_key,
-            json.dumps({'a': host, 'port': port}))
+        lb.group.environment.system.config_manager.set(lb.config_key,
+            json.dumps({'host': host, 'port': port}))
+
+        # Add group to endpoint supervisor
+        endpoints = supervisors.endpoint_supervisor_client()
+        endpoints.add_group(lb.group.pk, lb.group.config_key)
         lb.save()
 
     def delete(self):
+        # Remove group from endpoint supervisor
+        endpoints = supervisors.endpoint_supervisor_client()
+        endpoints.remove_group(self.group.pk)
+
         # Remove key from config
         self.group.environment.system.config_manager.delete(self.config_key)
         self.backend.delete_lb(self)
         super(LoadBalancer, self).delete()
+
+    def add_endpoint(self, endpoint):
+        """
+        Chooses and adds an endpoint to the load balancer.
+
+        :Parameters:
+          - `endpoint`: {
+            'host': '11.22.33.44',
+            'ports': {'http': 80, 'https': 443}
+          }
+        """
+        self.apply_endpoint(self.backend.lb_add_endpoint, endpoint)
+
+    def remove_endpoint(self, endpoint):
+        """
+        Chooses and removes an endpoint from the load balancer.
+
+        :Parameters:
+          - `endpoint`: {
+            'host': '11.22.33.44',
+            'ports': {'http': 80, 'https': 443}
+          }
+        """
+        self.apply_endpoint(self.backend.lb_remove_endpoint, endpoint)
+
+    def apply_endpoint(self, func, endpoint):
+        host = endpoint['host']
+        port = endpoint['ports'].get(self.port_name)
+        if port != None:
+            func(self, host, port)
+        else:
+            log.info('Unable to find port with name "%s"' % self.port_name)
 
     @property
     def backend(self):
@@ -474,6 +571,16 @@ class LoadBalancer(models.Model):
     @property
     def config_key(self):
         return self.environment.system.config_manger.get_lb_key(self)
+
+    @classmethod
+    def pre_delete(cls, sender, instance, **kwargs):
+        lb = instance
+        # Remove key from config
+        lb.group.environment.system.config_manager.delete(lb.config_key)
+        lb.backend.delete_lb(lb)
+
+
+model_signals.pre_delete.connect(LoadBalancer.pre_delete, sender=LoadBalancer)
 
 
 class Host(AuditedModel):
@@ -610,7 +717,8 @@ class Group(AuditedModel):
     minimum_nodes = models.IntegerField(default=1)
     maximum_nodes = models.IntegerField(null=True)
     node = models.ForeignKey('Node')
-    load_balancer = models.OneToOneField('LoadBalancer', null=True)
+    load_balancer = models.OneToOneField('LoadBalancer', null=True,
+                                         related_name='group')
     unique_together = ('environment', 'name')
 
     def scale_up(self, amount):
@@ -643,6 +751,10 @@ class Group(AuditedModel):
                 port_name=port_name, protocol=protocol, options=options)
         else:
             raise Exception('group already has a load balancer')
+
+    @property
+    def config_key(self):
+        return self.environment.system.config_manger.get_group_key(self)
 
     @property
     def batch_size(self):

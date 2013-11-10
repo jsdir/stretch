@@ -1,4 +1,4 @@
-from mock import patch, Mock, MagicMock, DEFAULT
+from mock import patch, Mock, MagicMock, DEFAULT, call
 from nose.tools import eq_, assert_raises, raises
 from unittest import TestCase
 
@@ -14,19 +14,6 @@ class TestEnvironment(TestCase):
     def test_backend(self, get_backend):
         get_backend.return_value = 'foo'
         eq_(self.env.backend, 'foo')
-
-    """
-    @patch('django.conf.settings.STRETCH_BATCH_SIZE', 3)
-    @patch('stretch.models.Environment.instances')
-    @patch('stretch.utils.map_groups')
-    def test_map_instances(self, map_groups, instances):
-        callback = Mock()
-        i_foo = Mock(spec=['group'], group='foo')
-        i_bar = Mock(spec=['group'], group='bar')
-        instances.all.return_value = [i_foo, i_bar]
-        self.env.map_instances(callback)
-        map_groups.assert_called_with(callback,
-                                      {'foo': [i_foo], 'bar': [i_bar]}, 3)"""
 
     @patch('stretch.models.Environment.current_release')
     @patch('stretch.models.Deploy')
@@ -140,5 +127,34 @@ class TestEnvironment(TestCase):
         self.env.post_save(Mock(), env, False)
         config_manager.sync_env_config.assert_called_with(env)
 
-    def test_deploy_to_instances(self):
-        pass
+    @testutils.patch_settings('STRETCH_BATCH_SIZE', 5)
+    @patch('stretch.models.Environment.groups', Mock())
+    @patch('stretch.models.Environment.hosts', Mock())
+    @patch('stretch.models.pool')
+    def test_deploy_to_instances(self, pool):
+        no_group_pool = Mock()
+        pools = [Mock(), Mock(), Mock()]
+        groups = [
+            testutils.mock_attr(batch_size=10),
+            testutils.mock_attr(batch_size=50)
+        ]
+        hosts = [
+            testutils.mock_attr(group=groups[0]),
+            testutils.mock_attr(group=groups[1]),
+            testutils.mock_attr(group=None)
+        ]
+        pool.Pool.side_effect = pools
+        pool.Group.return_value = no_group_pool
+        self.env.groups.all.return_value = groups
+        self.env.hosts.all.return_value = hosts
+
+        self.env._deploy_to_instances('sha')
+
+        pools[2].spawn.assert_has_calls([
+            call(hosts[0].pull_nodes, pools[0], 'sha'),
+            call(hosts[1].pull_nodes, pools[1], 'sha'),
+            call(hosts[2].pull_nodes, no_group_pool, 'sha')
+        ], any_order=True)
+
+        for p in pool:
+            p.join.assert_called_with()

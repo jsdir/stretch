@@ -6,18 +6,18 @@
         "name": "production",
         "groups": {
           "group_name": {
-            "instance_id": {
-              "address": "11.22.33.44",
-              "ports": {"http": 23524, "protocol": 23527}
-            }
+            "lb": "{'host': '127.0.0.1', 'port': 23527}",
+            "instance_id": "{'host': '11.22.33.44', 'ports': {'http': 80, 'protocol': 23527}}",
+            "instance_id": "{'host': '11.22.33.44', 'ports': {'http': 80, 'protocol': 23527}}",
+            "instance_id": "{'host': '11.22.33.44', 'ports': {'http': 80, 'protocol': 23527}}",
+            "instance_id": "{'host': '11.22.33.44', 'ports': {'http': 80, 'protocol': 23527}}"
           }
         },
         "hosts": {
           "host_name": {
-            "instance_id": {
-              "address": "11.22.33.44",
-              "ports": {"http": 23524, "protocol": 23527}
-            }
+            "instance_id": "{'host': '11.22.33.44', 'ports': {'http': 80, 'protocol': 23527}}",
+            "instance_id": "{'host': '11.22.33.44', 'ports': {'http': 80, 'protocol': 23527}}",
+            "instance_id": "{'host': '11.22.33.44', 'ports': {'http': 80, 'protocol': 23527}}",
           }
         },
         "config": {"key": "value"}

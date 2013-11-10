@@ -2,7 +2,8 @@ import pymongo
 from flask.ext.restful import reqparse, Resource
 
 from stretch import utils
-from stretch.agent import db, api, tasks
+#from stretch.agent import tasks
+from stretch.agent.app import db, api
 
 
 class PersistentObject(object):
@@ -45,8 +46,9 @@ class PersistentObject(object):
     def delete(self):
         self.get_collection().remove({'_id': self.data['_id']})
         # Clean up tasks
+        """
         for task in tasks.Task.get_object_tasks(self.data['_id'], self.name):
-            tasks.Task(task['_id']).delete()
+            tasks.Task(task['_id']).delete()"""
 
     @classmethod
     def get_collection(cls):
@@ -74,15 +76,17 @@ class ObjectResource(Resource):
         return '', 204
 
 
-def add_api_resource(resource, list_resource, plural_name):
+def add_api_resource(plural_name, resource, list_resource):
     prefix = '/v1/%s' % plural_name
     api.add_resource(list_resource, prefix)
     api.add_resource(resource, '%s/<string:_id>' % prefix)
 
 
 def add_task_resource(plural_name, obj, tasks):
+    pass
+    """
     resource, resource_list = tasks.get_task_resources(obj, tasks)
     prefix = '/v1/%s' % plural_name
     api.add_resource(resource_list, '%s/<string:_id>/tasks' % prefix)
     api.add_resource(resource,
-                     '%s/<string:_id>/tasks/<string:task_id>' % prefix)
+                     '%s/<string:_id>/tasks/<string:task_id>' % prefix)"""

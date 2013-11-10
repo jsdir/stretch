@@ -3,7 +3,8 @@ import json
 from flask.ext.restful import reqparse
 
 from stretch import utils, config_managers
-from stretch.agent import resources, TaskException, nodes, agent_dir
+from stretch.agent.app import TaskException, agent_dir
+from stretch.agent import resources, nodes
 
 
 config_manager = config_managers.EtcdConfigManager('127.0.0.1:4001')
@@ -70,7 +71,9 @@ class Instance(resources.PersistentObject):
             ports[name] = int(host.split(':')[1])
 
         self.data['cid'] = cid
-        self.data['endpoint'] = json.dumps({'a': agent_host, 'ports': ports})
+        self.data['endpoint'] = json.dumps({
+            'host': agent_host, 'ports': ports
+        })
         self.save()
 
     def stop(self):

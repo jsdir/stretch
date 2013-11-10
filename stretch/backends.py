@@ -7,7 +7,7 @@ from django.conf import settings
 
 import stretch
 from stretch.salt_api import caller_client
-from stetch.agent.loadbalancers import LoadBalancer
+from stretch.agent.loadbalancers import LoadBalancer
 from stretch import utils
 
 
@@ -29,10 +29,10 @@ class Backend(object):
     def delete_host(self, host):
         raise NotImplementedError
 
-    def lb_add_endpoint(self, lb, host):
+    def lb_add_endpoint(self, lb, host, port):
         raise NotImplementedError
 
-    def lb_remove_endpoint(self, lb, host):
+    def lb_remove_endpoint(self, lb, host, port):
         raise NotImplementedError
 
     def create_lb(self, lb, hosts):
@@ -64,10 +64,11 @@ class DockerBackend(Backend):
         LoadBalancer(lb.backend_id).add_endpoint(host, port)
 
     def lb_remove_endpoint(self, lb, host, port):
-        LoadBalancer(lb.backend_id).add_endpoint(host, port)
+        LoadBalancer(lb.backend_id).remove_endpoint(host, port)
 
     def create_lb(self, lb):
         LoadBalancer.create({'id': lb.pk})
+        return '127.0.0.1', port
 
     def delete_lb(self, lb):
         LoadBalancer(lb.pk).delete()

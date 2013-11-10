@@ -3,7 +3,8 @@ import json
 
 from stretch import utils
 from stretch.salt_api import caller_client
-from stretch.agent import api, resources, agent_dir
+from stretch.agent import resources
+from stretch.agent.app import api, agent_dir
 
 
 class Node(resources.PersistentObject):
@@ -18,6 +19,8 @@ class Node(resources.PersistentObject):
     }
 
     def pull(self, args):
+        # TODO: accept an id argument and automatically create node if that is
+        # supplied with the pull request.
         # Pull image
         if not args['app_path']:
             utils.run_cmd(['docker', 'pull', args['image']])
@@ -32,9 +35,21 @@ class Node(resources.PersistentObject):
     def get_templates_path(self):
         return os.path.join(agent_dir, 'templates', 'nodes', self.data['_id'])
 
+    def delete(self):
+        # TODO: delete all docker images
+        super(Node, self).delete()
+
     @property
     def pulled(self):
         return self.data['sha'] or self.data['app_path']
+
+
+class NodeListResource(resources.ObjectListResource):
+    obj_class = Node
+
+
+class NodeResource(resources.ObjectResource):
+    obj_class = Node
 
 
 def configure_parser(parser):

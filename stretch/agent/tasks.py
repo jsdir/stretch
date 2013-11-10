@@ -2,10 +2,11 @@ import uuid
 from datetime import datetime
 from threading import Thread
 
-from stretch.agent import api, resources, TaskException
+from stretch.agent.app import api, TaskException
+from stretch.agent.resources import PersistentObject
 
 
-class Task(resources.PersistentObject):
+class Task(PersistentObject):
     name = 'task'
     attrs = {
         'status': 'PENDING',
@@ -74,7 +75,7 @@ def get_task_resources(obj, tasks):
                                    obj(object_id))).start()
             return task.data, 201
 
-    class TaskResource(resources.ObjectResource):
+    class TaskResource(ObjectResource):
         obj_class = Task
 
         def get(self, object_id, task_id):

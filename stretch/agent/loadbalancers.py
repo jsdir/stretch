@@ -1,7 +1,4 @@
-from flask.ext.restful import reqparse, Resource
-
-from stretch.agent.loadbalancer_server import get_client
-from stretch.agent import api, resources, db
+from stretch.agent import resources
 
 
 class LoadBalancer(resources.PersistentObject):

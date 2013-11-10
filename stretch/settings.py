@@ -182,13 +182,6 @@ LOGGING = {
             'backupCount': 2,
             'formatter': 'standard',
         },
-        'celery': {
-            'level': 'DEBUG',
-            'class': 'logging.handlers.RotatingFileHandler',
-            'filename': 'log/celery.log',
-            'formatter': 'standard',
-            'maxBytes': 1024 * 1024 * 100,  # 100 mb
-        },
         'console':{
             'level':'INFO',
             'class':'logging.StreamHandler',
@@ -203,10 +196,6 @@ LOGGING = {
         },
         'stretch': {
             'handlers': ['console', 'logfile'],
-            'level': 'DEBUG',
-        },
-        'celery': {
-            'handlers': ['celery'],
             'level': 'DEBUG',
         },
     }

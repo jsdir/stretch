@@ -4,9 +4,8 @@ import requests
 import time
 from urlparse import urljoin
 from django.conf import settings
-import gevent
-
-gevent.monkey.patch_all()
+from gevent import monkey
+monkey.patch_all()
 
 
 class AgentClient(object):
@@ -67,25 +66,3 @@ class AgentClient(object):
 
     def get_url(self, resource):
         return urljoin(self.base_url, 'v1', resource)
-
-    def add_loadbalancer(self, lb):
-        requests.post(self.get_url('loadbalancers'), data={'id': str(lb.pk)})
-
-    def remove_loadbalancer(self, lb):
-        requests.delete(self.get_url('loadbalancers/%s' % str(lb.pk)))
-
-    def add_endpoint(self, lb, endpoint):
-        host, port = endpoint
-        resource = 'loadbalancers/%s/endpoints' % str(lb.pk)
-        requests.post(self.get_url(resource), data={
-            'host': host,
-            'port': port
-        })
-
-    def remove_endpoint(self, lb, endpoint):
-        host, port = endpoint
-        resource = 'loadbalancers/%s/endpoints' % str(lb.pk)
-        requests.delete(self.get_url(resource), data={
-            'host': host,
-            'port': port
-        })

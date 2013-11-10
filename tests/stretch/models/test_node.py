@@ -18,7 +18,3 @@ def test_node_get_image():
 
     with patch_settings('STRETCH_REGISTRY_PUBLIC_URL', 'public_url'):
         eq_(node.get_image(local=False, private=False), 'public_url/sys1/node')
-
-
-def test_node_name_validity():
-    raise Exception
