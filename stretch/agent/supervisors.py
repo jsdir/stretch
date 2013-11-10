@@ -93,9 +93,11 @@ class ObjectExists(LoadBalancerException):
 
 
 def run_lb_supervisor():
-    # Load loadbalancers from ORM
     # Set new persistent endpoints
     lb_server = TCPLoadBalancerServer()
+    for lb in LoadBalancer.all():
+        host, port = '127.0.0.1', lb_server.xmlrpc_start_lb(lb.pk)
+        # TODO: set lb endpoint in etcd
     reactor.listenTCP(LB_SUPERVISOR_PORT, server.Site(lb_server))
     reactor.run()
 

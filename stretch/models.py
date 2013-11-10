@@ -21,7 +21,9 @@ from django.conf import settings
 
 from stretch import (signals, sources, utils, backends, parser, exceptions,
                      config_managers)
-from stretch.salt_api import salt_client, wheel_client, runner_client
+from stretch.salt_api import salt_client, wheel_client
+from stretch.agent import supervisors
+from stretch.agent.client import AgentClient
 
 
 log = logging.getLogger('stretch')
@@ -316,10 +318,10 @@ class Release(AuditedModel):
 
         # Build release from snapshot
         # Archive the release
-        utils.clear_path(release._data_dir)
+        utils.clear_path(release.data_dir)
 
         # Tar release buffer
-        tar_path = os.path.join(release._data_dir, self.archive_name)
+        tar_path = os.path.join(release.data_dir, cls.archive_name)
         tar_file = tarfile.open(tar_path, 'w:gz')
         tar_file.add(tmp_path, '/')
         tar_file.close()
@@ -349,7 +351,7 @@ class Release(AuditedModel):
         return parser.Snapshot(tmp_path)
 
     @property
-    def _data_dir(self):
+    def data_dir(self):
         """
         Returns the archive directory for the release.
         """
@@ -396,18 +398,16 @@ class Node(AuditedModel):
             prefix = settings.STRETCH_REGISTRY_PUBLIC_URL
         return '%s/sys%s/%s' % (prefix, self.system.pk, self.name)
 
-    """
-    TODO: Clean up deleted nodes here and when a host is deleted. An unmanaged
-    host may still have cached images.
-
-    @classmethod
-    def pre_delete(cls, sender, instance, **kwargs):
-        node = instance
-        # Remove node from all host agents.
-        instance.host.agent.remove_node(instance)
-
-    model_signals.pre_delete.connect(Node.pre_delete, sender=Node)
-    """
+    # TODO: Clean up deleted nodes here and when a host is deleted. An unmanaged
+    # host may still have cached images.
+    #
+    # @classmethod
+    # def pre_delete(cls, sender, instance, **kwargs):
+    #     node = instance
+    #     # Remove node from all host agents.
+    #     instance.host.agent.remove_node(instance)
+    #
+    # model_signals.pre_delete.connect(Node.pre_delete, sender=Node)
 
 
 class Instance(AuditedModel):
@@ -442,6 +442,9 @@ class Instance(AuditedModel):
 
     @property
     def load_balancer(self):
+        """
+        Returns the instance's parent load balancer.
+        """
         lb = None
         if self.host.group:
             lb = self.host.group.load_balancer
@@ -449,6 +452,9 @@ class Instance(AuditedModel):
 
     @property
     def config_key(self):
+        """
+        Returns the instance's key in the configuration manager.
+        """
         return self.environment.system.config_manger.get_instance_key(self)
 
     def restart(self):
@@ -458,9 +464,9 @@ class Instance(AuditedModel):
         its nodes.
         """
         # Restart instance
-        self._safe_run(self.host.agent.restart_instance)
+        self.safe_run(self.host.agent.restart_instance)
 
-    def _safe_run(self, func):
+    def safe_run(self, func):
         """
         If the instance belongs to a load balancer, `func` is run while
         mirroring instance state to the load balancer.
@@ -496,7 +502,7 @@ class Instance(AuditedModel):
         Deletes the instance through the host's agent.
         """
         # Remove instance
-        instance._safe_run(instance.host.agent.remove_instance)
+        instance.safe_run(instance.host.agent.remove_instance)
 
 
 model_signals.pre_delete.connect(Instance.pre_delete, sender=Instance)
@@ -543,16 +549,6 @@ class LoadBalancer(models.Model):
         endpoints.add_group(lb.group.pk, lb.group.config_key)
         lb.save()
 
-    def delete(self):
-        # Remove group from endpoint supervisor
-        endpoints = supervisors.endpoint_supervisor_client()
-        endpoints.remove_group(self.group.pk)
-
-        # Remove key from config
-        self.group.environment.system.config_manager.delete(self.config_key)
-        self.backend.delete_lb(self)
-        super(LoadBalancer, self).delete()
-
     def add_endpoint(self, endpoint):
         """
         Chooses and adds an endpoint to the load balancer.
@@ -594,11 +590,17 @@ class LoadBalancer(models.Model):
 
     @property
     def config_key(self):
+        """
+        Returns the load balancer's key in the configuration manager.
+        """
         return self.environment.system.config_manger.get_lb_key(self)
 
     @classmethod
     def pre_delete(cls, sender, instance, **kwargs):
         lb = instance
+        # Remove group from endpoint supervisor
+        endpoints = supervisors.endpoint_supervisor_client()
+        endpoints.remove_group(lb.group.pk)
         # Remove key from config
         lb.group.environment.system.config_manager.delete(lb.config_key)
         lb.backend.delete_lb(lb)
@@ -630,17 +632,16 @@ class Host(AuditedModel):
           - `group`: the host's group.
         """
         domain_name = env.system.domain_name
-        hostname = (utils.generate_random_hex(8) if group
-                    else fqdn.replace(domain_name, ''))
+        hostname = utils.generate_random_hex(8)
         fqdn = '%s.%s' % (hostname, domain_name) if domain_name else hostname
 
-        host = cls(fqdn=fqdn, name=name, hostname=hostname,
+        host = cls(fqdn=fqdn, name=fqdn, hostname=hostname,
                    domain_name=domain_name, environment=env, group=group)
 
         if not env.backend:
             raise exceptions.UndefinedBackend()
         host.address = env.backend.create_host(host)
-        host._finish_provisioning()
+        host.finish_provisioning()
         host.save()
         log.info('Creating new instance for host...')
         host.create_instance(group.node)
@@ -648,10 +649,10 @@ class Host(AuditedModel):
         return host
 
     @classmethod
-    def create_unmanaged(cls, env, name, fqdn):
+    def create_unmanaged(cls, env, name, hostname, fqdn):
         host = cls(fqdn=fqdn, name=name, hostname=hostname,
                    domain_name=env.system.domain_name, environment=env)
-        host._finish_provisioning()
+        host.finish_provisioning()
         host.save()
         return host
 
@@ -684,7 +685,7 @@ class Host(AuditedModel):
                 log.debug(result)
                 break
 
-    def _finish_provisioning(self):
+    def finish_provisioning(self):
         self._accept_key()
         self.sync()
 

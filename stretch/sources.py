@@ -130,7 +130,7 @@ class AutoloadableSource(Source):
 
 class EventHandler(FileSystemEventHandler):
     def __init__(self, callback):
-        super(FileSystemEventHandler, self).__init__()
+        super(EventHandler, self).__init__()
         self.callback = callback
         self.queue = []
         self.timeout = 0.2
