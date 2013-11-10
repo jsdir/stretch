@@ -2,12 +2,12 @@
 Services to ensure that all instances and load balancers are running and
 discoverable.
 """
+import json
 import xmlrpclib
 from twisted.web import xmlrpc, server
 from twisted.internet import reactor, defer, task
 from twisted.internet.protocol import Factory
-from twisted.protocols.portforward import ProxyServer, ProxyFactory
-from twisted.application import internet, service
+from twisted.protocols.portforward import ProxyFactory
 from treq import get, post
 
 from stretch import utils, models
@@ -19,25 +19,30 @@ ENDPOINT_SUPERVISOR_PORT = 24227
 
 
 class TCPLoadBalancerFactory(Factory):
-    endpoints = {}
+    endpoints = []
 
     def buildProtocol(self, addr):
-        factory = self.endpoints.pop(0, None) or ProxyFactory(None, None)
-        self.endpoints['a'] = factory
+        try:
+            endpoint, factory = self.endpoints.pop(0)[1]
+        except IndexError:
+            factory = ProxyFactory(None, None)
+        else:
+            self.endpoints.append((endpoint, factory))
+
         return factory.buildProtocol(addr)
 
     def add_endpoint(self, host, port):
         endpoint = tuple(host, port)
-        if endpoint not in self.endpoints:
-            self.endpoints[endpoint] = ProxyFactory(host, port)
+        if endpoint not in dict(self.endpoints):
+            self.endpoints.append((endpoint, ProxyFactory(host, port)))
         else:
             raise ObjectExists('endpoint already exists in load balancer')
 
     def remove_endpoint(self, endpoint):
         endpoint = tuple(endpoint)
         try:
-            self.endpoints.pop(endpoint)
-        except KeyError:
+            self.endpoints.remove(endpoint)
+        except ValueError:
             raise ObjectDoesNotExist('endpoint does not exist in load '
                                      'balancer')
 
@@ -47,27 +52,27 @@ class TCPLoadBalancerServer(xmlrpc.XMLRPC):
 
     def xmlrpc_start_lb(self, lb_id):
         if lb_id in self.load_balancers:
-            raise LoadBalancerException('load balancer with id "%s" is already '
-                                        'running' % lb_id)
+            raise LoadBalancerException('load balancer with id "%s" is '
+                                        'already running' % lb_id)
         factory = TCPLoadBalancerFactory()
         port = reactor.listenTCP(0, factory)
         self.load_balancers[lb_id] = dict(port=port, factory=factory)
         return port.getHost().port
 
     def xmlrpc_add_endpoint(self, lb_id, host, port):
-        self.get_lb(lb_id)['factory'].add_endpoint(host, port)
+        self._get_lb(lb_id)['factory'].add_endpoint(host, port)
         return True
 
     def xmlrpc_remove_endpoint(self, lb_id, host, port):
-        self.get_lb(lb_id)['factory'].remove_endpoint(host, port)
+        self._get_lb(lb_id)['factory'].remove_endpoint(host, port)
         return True
 
     def xmlrpc_stop_lb(self, lb_id):
-        lb = self.get_lb(lb_id)
+        lb = self._get_lb(lb_id)
         defer.maybeDeferred(lb['port'].stopListening)
         return True
 
-    def get_lb(self, lb_id):
+    def _get_lb(self, lb_id):
         try:
             return self.load_balancers[lb_id]
         except KeyError:
@@ -90,8 +95,8 @@ class ObjectExists(LoadBalancerException):
 def run_lb_supervisor():
     # Load loadbalancers from ORM
     # Set new persistent endpoints
-    s = TCPLoadBalancerServer()
-    reactor.listenTCP(LB_SUPERVISOR_PORT, server.Site(s))
+    lb_server = TCPLoadBalancerServer()
+    reactor.listenTCP(LB_SUPERVISOR_PORT, server.Site(lb_server))
     reactor.run()
 
 
@@ -128,7 +133,7 @@ class EndpointSupervisor(xmlrpc.XMLRPC):
             self.blocked_instances.append(instance_id)
         return True
 
-    def xmlrpc_unblock_instance(self, backend_id):
+    def xmlrpc_unblock_instance(self, instance_id):
         if instance_id in self.blocked_instances:
             self.blocked_instances.remove(instance_id)
         return True
@@ -155,11 +160,11 @@ class EndpointSupervisor(xmlrpc.XMLRPC):
 
         url = 'http://127.0.0.1:4001/v1/watch%s' % config_key
         if index:
-            r = post(url, data={'index': index})
+            deferred = post(url, data={'index': index})
         else:
-            r = get(url)
+            deferred = get(url)
 
-        r.addCallback(handle_response)
+        deferred.addCallback(handle_response)
         return True
 
     def add_endpoint(group_id, endpoint):
