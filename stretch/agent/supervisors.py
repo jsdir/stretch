@@ -107,6 +107,7 @@ def lb_supervisor_client():
 
 class EndpointSupervisor(xmlrpc.XMLRPC):
     groups = []
+    blocked_instances = []
 
     def __init__(self, groups):
         xmlrpc.XMLRPC.__init__(self)
@@ -122,6 +123,16 @@ class EndpointSupervisor(xmlrpc.XMLRPC):
         self.groups.remove(group_id)
         return True
 
+    def xmlrpc_block_instance(self, instance_id):
+        if instance_id not in self.blocked_instances:
+            self.blocked_instances.append(instance_id)
+        return True
+
+    def xmlrpc_unblock_instance(self, backend_id):
+        if instance_id in self.blocked_instances:
+            self.blocked_instances.remove(instance_id)
+        return True
+
     def watch(self, group_id, config_key, index=None):
 
         def handle_response(response):
@@ -130,7 +141,7 @@ class EndpointSupervisor(xmlrpc.XMLRPC):
         def key_changed(result):
             if group_id in self.groups:
                 key = result['key'].lstrip(config_key)
-                if key != 'lb':
+                if key != 'lb' and key not in self.blocked_instances:
                     if result.get('newKey'):
                         # add endpoint
                         endpoint = json.loads(result['value'])

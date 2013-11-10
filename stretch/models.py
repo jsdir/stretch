@@ -316,10 +316,10 @@ class Release(AuditedModel):
 
         # Build release from snapshot
         # Archive the release
-        utils.clear_path(release.data_dir)
+        utils.clear_path(release._data_dir)
 
         # Tar release buffer
-        tar_path = os.path.join(release.data_dir, self.archive_name)
+        tar_path = os.path.join(release._data_dir, self.archive_name)
         tar_file = tarfile.open(tar_path, 'w:gz')
         tar_file.add(tmp_path, '/')
         tar_file.close()
@@ -341,7 +341,7 @@ class Release(AuditedModel):
 
         TODO: clean up the temporary path when finished.
         """
-        tar_path = os.path.join(self.data_dir, self.archive_name)
+        tar_path = os.path.join(self._data_dir, self.archive_name)
         tmp_path = utils.temp_dir()
         tar_file = tarfile.open(tar_path)
         tar_file.extractall(tmp_path)
@@ -349,7 +349,7 @@ class Release(AuditedModel):
         return parser.Snapshot(tmp_path)
 
     @property
-    def data_dir(self):
+    def _data_dir(self):
         """
         Returns the archive directory for the release.
         """
@@ -440,32 +440,63 @@ class Instance(AuditedModel):
         """
         self.host.agent.reload_instance(self)
 
+    @property
+    def load_balancer(self):
+        lb = None
+        if self.host.group:
+            lb = self.host.group.load_balancer
+        return lb
+
+    @property
+    def config_key(self):
+        return self.environment.system.config_manger.get_instance_key(self)
+
     def restart(self):
         """
         When the agent restarts an instance, it restarts with the newest
         revision of the node. Restarting should take place after the host pulls
         its nodes.
         """
-        # Remove instance endpoint from load balancer.
-        # Send signal flag to the receiver to ignore calls temporarily from
-        # this instance and to remove the instance (RPC). Block until finished.
-        self.host.agent.restart_instance(self)
-        # Unblock
+        # Restart instance
+        self._safe_run(self.host.agent.restart_instance)
 
-    @property
-    def config_key(self):
-        return self.environment.system.config_manger.get_instance_key(self)
+    def _safe_run(self, func):
+        """
+        If the instance belongs to a load balancer, `func` is run while
+        mirroring instance state to the load balancer.
+
+        Restarting or removing any instance belonging to a load balancer
+        uses a block/unblock pattern. This ensures that the endpoint manager
+        does not remove the endpoint on its own. Since we must know the exact
+        time the endpoint is removed from the load balancer, `_safe_run`
+        removes it manually.
+
+        :Parameters:
+          - `func`: the function to safely run.
+        """
+        if self.load_balancer:
+            # Have endpoint manager block (ignore) this instance
+            endpoints = supervisors.endpoint_supervisor_client()
+            endpoints.block_instance(self.pk)
+            # Manually remove the instance's endpoint from the load balancer
+            config_manager = self.environment.system.config_manger
+            endpoint = config_manager.get(self.config_key)
+            self.load_balancer.remove_endpoint(endpoint)
+
+        # Run `func` now that instance state is mirrored to its load balancer
+        func(self)
+
+        if self.load_balancer:
+            # Have endpoint manager unblock this instance
+            endpoints.unblock_instance(self.pk)
 
     @classmethod
     def pre_delete(cls, sender, instance, **kwargs):
         """
         Deletes the instance through the host's agent.
         """
-        # Remove instance endpoint from load balancer.
-        # Send signal flag to the receiver to ignore calls temporarily from
-        # this instance and to remove the instance (RPC). Block until finished.
-        instance.host.agent.remove_instance(instance)
-        # Unblock
+        # Remove instance
+        instance._safe_run(instance.host.agent.remove_instance)
 
 
 model_signals.pre_delete.connect(Instance.pre_delete, sender=Instance)
@@ -473,17 +504,10 @@ model_signals.pre_delete.connect(Instance.pre_delete, sender=Instance)
 
 class LoadBalancer(models.Model):
     """
-    Load balancers adhere to a `protocol`
-    enum(http, tcp) for now, load balancer is responsible for implementing these.
+    Load balancers adhere to a `protocol` -- http and tcp for now.
 
-
-    have a dynamic endpoint that is replicated to the configuration manager.
-    Backend returns an public address and port. The port is dynamically set.
-    For rackspace, this is set until the load balancer is deleted. For a virtual
-    loadbalancer is the agent, this will change on system startup. Agent will
-    replace the load balancer's endpoint at each startup.
-
-    Replicating instance endpoints to the load balancer.
+    For rackspace, the endpoint is set until the load balancer is deleted.
+    For docker, the endpoint will change on each system startup.
     """
     id = uuidfield.UUIDField(primary_key=True)
     port_name = models.TextField(validators=[alphanumeric])
@@ -539,7 +563,7 @@ class LoadBalancer(models.Model):
             'ports': {'http': 80, 'https': 443}
           }
         """
-        self.apply_endpoint(self.backend.lb_add_endpoint, endpoint)
+        self._apply_endpoint(self.backend.lb_add_endpoint, endpoint)
 
     def remove_endpoint(self, endpoint):
         """
@@ -551,9 +575,9 @@ class LoadBalancer(models.Model):
             'ports': {'http': 80, 'https': 443}
           }
         """
-        self.apply_endpoint(self.backend.lb_remove_endpoint, endpoint)
+        self._apply_endpoint(self.backend.lb_remove_endpoint, endpoint)
 
-    def apply_endpoint(self, func, endpoint):
+    def _apply_endpoint(self, func, endpoint):
         host = endpoint['host']
         port = endpoint['ports'].get(self.port_name)
         if port != None:
@@ -616,7 +640,7 @@ class Host(AuditedModel):
         if not env.backend:
             raise exceptions.UndefinedBackend()
         host.address = env.backend.create_host(host)
-        host.finish_provisioning()
+        host._finish_provisioning()
         host.save()
         log.info('Creating new instance for host...')
         host.create_instance(group.node)
@@ -625,10 +649,9 @@ class Host(AuditedModel):
 
     @classmethod
     def create_unmanaged(cls, env, name, fqdn):
-        domain_name = env.system.domain_name
         host = cls(fqdn=fqdn, name=name, hostname=hostname,
-                   domain_name=domain_name, environment=env)
-        host.finish_provisioning()
+                   domain_name=env.system.domain_name, environment=env)
+        host._finish_provisioning()
         host.save()
         return host
 
@@ -645,11 +668,27 @@ class Host(AuditedModel):
     def create_instance(self, node):
         Instance.create(self.environment, self, node)
 
-    def finish_provisioning(self):
-        self.accept_key()
+    def sync(self):
+        # Install dependencies
+        log.info('Installing dependencies...')
+        for _ in xrange(10):
+            result = self._call('state.highstate')
+            if result != {}:
+                log.debug(result)
+                break
+        # Synchronize modules
+        log.info('Synchronizing modules...')
+        for _ in xrange(10):
+            result = self._call('saltutil.sync_modules')
+            if result != {}:
+                log.debug(result)
+                break
+
+    def _finish_provisioning(self):
+        self._accept_key()
         self.sync()
 
-    def accept_key(self):
+    def _accept_key(self):
         log.info('Accepting minion key (%s)...' % self.fqdn)
 
         success = False
@@ -665,26 +704,10 @@ class Host(AuditedModel):
         else:
             raise Exception('failed to accept minion key')
 
-    def delete_key(self):
+    def _delete_key(self):
         wheel_client().call_func('key.delete', match=self.fqdn)
 
-    def sync(self):
-        # Install dependencies
-        log.info('Installing dependencies...')
-        for _ in xrange(10):
-            result = self.call('state.highstate')
-            if result != {}:
-                log.debug(result)
-                break
-        # Synchronize modules
-        log.info('Synchronizing modules...')
-        for _ in xrange(10):
-            result = self.call('saltutil.sync_modules')
-            if result != {}:
-                log.debug(result)
-                break
-
-    def call(self, *args, **kwargs):
+    def _call(self, *args, **kwargs):
         return salt_client().cmd(self.fqdn, *args, **kwargs)
 
     @property
@@ -695,7 +718,7 @@ class Host(AuditedModel):
     @classmethod
     def pre_delete(cls, sender, instance, **kwargs):
         host = instance
-        host.delete_key()
+        host._delete_key()
         if host.group:
             if not host.environment.backend:
                 raise exceptions.UndefinedBackend()
@@ -722,11 +745,11 @@ class Group(AuditedModel):
     unique_together = ('environment', 'name')
 
     def scale_up(self, amount):
-        self.check_valid_amount(self.hosts.count() + amount)
+        self._check_valid_amount(self.hosts.count() + amount)
         group(self._create_host.s() for _ in xrange(amount))().get()
 
     def scale_down(self, amount):
-        self.check_valid_amount(self.hosts.count() - amount)
+        self._check_valid_amount(self.hosts.count() - amount)
         hosts = self.hosts.all()[0:amount]
         group(self._delete_host.s(host.pk) for host in hosts)().get()
 
@@ -737,7 +760,14 @@ class Group(AuditedModel):
         elif relative_amount < 0:
             self.scale_down(-relative_amount)
 
-    def check_valid_amount(self, amount):
+    def create_load_balancer(self, port_name, protocol, options={}):
+        if not self.load_balancer:
+            self.load_balancer = LoadBalancer.create(group=self,
+                port_name=port_name, protocol=protocol, options=options)
+        else:
+            raise Exception('group already has a load balancer')
+
+    def _check_valid_amount(self, amount):
         if self.maximum_nodes == None:
             valid = amount >= self.minimum_nodes
         else:
@@ -745,12 +775,13 @@ class Group(AuditedModel):
         if not valid:
             raise Exception('invalid scaling amount')
 
-    def create_load_balancer(self, port_name, protocol, options={}):
-        if not self.load_balancer:
-            self.load_balancer = LoadBalancer.create(group=self,
-                port_name=port_name, protocol=protocol, options=options)
-        else:
-            raise Exception('group already has a load balancer')
+    @task
+    def _create_host(self):
+        Host.create(self.environment, self)
+
+    @task
+    def _delete_host(self, host_id):
+        Host.objects.get(pk=host_id).delete()
 
     @property
     def config_key(self):
@@ -760,14 +791,6 @@ class Group(AuditedModel):
     def batch_size(self):
         return min(int(math.ceil(self.instances.count() / 2.0)),
                    settings.STRETCH_BATCH_SIZE)
-
-    @task
-    def _create_host(self):
-        Host.create(self.environment, self)
-
-    @task
-    def _delete_host(self, host_id):
-        Host.objects.get(pk=host_id).delete()
 
 
 class Deploy(AuditedModel):
