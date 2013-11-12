@@ -1,7 +1,5 @@
 import json
-import time
 import requests
-import time
 from urlparse import urljoin
 from django.conf import settings
 from gevent import monkey
@@ -11,12 +9,6 @@ monkey.patch_all()
 class AgentClient(object):
     def __init__(self, host, port=settings.STRETCH_AGENT_PORT):
         self.base_url = 'https://%s:%s' % (host, port)
-
-    def add_node(self, node):
-        requests.post(self.get_url('nodes'), data={'id': str(node.pk)})
-
-    def remove_node(self, node):
-        requests.delete(self.get_url('nodes/%s' % str(node.pk)))
 
     def pull(self, node, sha=None):
         env = self.host.environment
@@ -44,13 +36,13 @@ class AgentClient(object):
         })
 
     def remove_instance(self, instance):
-        requests.delete(self.get_url('instances/%s' % str(isntance.pk)))
+        requests.delete(self.get_url('instances/%s' % str(instance.pk)))
 
     def reload_instance(self, instance):
-        task = self.run_task('instances/%s' % str(isntance.pk), 'reload')
+        task = self.run_task('instances/%s' % str(instance.pk), 'reload')
 
     def restart_instance(self, instance):
-        task = self.run_task('instances/%s' % str(isntance.pk), 'restart')
+        task = self.run_task('instances/%s' % str(instance.pk), 'restart')
 
     def run_task(self, resource, task_name, options={}):
         base_url = self.get_url(urljoin(resource, 'tasks'))

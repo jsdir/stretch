@@ -22,7 +22,7 @@ from django.conf import settings
 from stretch import (signals, sources, utils, backends, parser, exceptions,
                      config_managers)
 from stretch.salt_api import salt_client, wheel_client
-from stretch.agent import supervisors
+#from stretch.agent import supervisors
 from stretch.agent.client import AgentClient
 
 

@@ -1,5 +1,6 @@
 import sys
 import argparse
+import subprocess
 import os
 os.environ['DJANGO_SETTINGS_MODULE'] = 'stretch.settings'
 
@@ -7,7 +8,7 @@ from django.core import management
 from djcelery.management.commands import celery
 
 from stretch import agent
-from stretch.agent import loadbalancer_server
+from stretch.agent import supervisors
 
 
 def run(args=sys.argv[1:]):
@@ -28,9 +29,14 @@ def run(args=sys.argv[1:]):
     args = parser.parse_args(args)
 
     if args.command == 'agent':
-        agent.run()
-    if args.command == 'lb':
-        loadbalancer_server.run()
+        subprocess.call(['gunicorn', 'stretch.agent.app:app', '-w', '4'])
+        #agent.run()
+    elif args.command == 'lb_supervisor':
+        supervisors.run_lb_supervisor()
+    elif args.command == 'endpoint_supervisor':
+        supervisors.run_endpoint_supervisor()
+    elif args.command == 'instance_supervisor':
+        supervisors.run_instance_supervisor()
     elif args.command == 'autoload':
         management.call_command('autoload')
     elif args.command == 'celery':

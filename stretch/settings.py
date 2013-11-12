@@ -221,11 +221,17 @@ STRETCH_TEMP_DIR = '/tmp/stretch'
 STRETCH_DATA_DIR = '/var/lib/stretch'
 STRETCH_CACHE_DIR = '/var/cache/stretch'
 STRETCH_BACKEND_IMAGE_PREFIX = 'stretch-host-image'
-DOMAIN_NAME = None
 SALT_CONF_PATH = '/etc/salt'
 STRETCH_BATCH_SIZE = 5
+
 STRETCH_REGISTRY_URL = 'registry.example.net:5000'
+STRETCH_REGISTRY_CLIENT_CERT = '/etc/stretch/pki/registry.pem'
+# .pem (.crt, .key)
+# Distribute STRETCH_REGISTRY_CLIENT_CERT to all agents
+STRETCH_CLIENT_CERT = None
+
 STRETCH_AGENT_PORT = 24225
+
 
 try:
     from .local_settings import *

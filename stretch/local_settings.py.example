@@ -31,5 +31,3 @@ BACKEND = {
         'region': 'DFW',
     }
 }
-
-DOMAIN_NAME = 'example.com'
