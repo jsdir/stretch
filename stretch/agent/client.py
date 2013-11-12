@@ -3,28 +3,34 @@ import requests
 from urlparse import urljoin
 from django.conf import settings
 from gevent import monkey
-monkey.patch_all()
+monkey.patch_time()
 
 
 class AgentClient(object):
-    def __init__(self, host, port=settings.STRETCH_AGENT_PORT):
-        self.base_url = 'https://%s:%s' % (host, port)
+    def __init__(self, host):
+        self.host = host
+        self.base_url = 'https://%s:%s' % (host.address,
+                                           settings.STRETCH_AGENT_PORT)
 
-    def pull(self, node, sha=None):
+    def pull(self, node, release=None):
         env = self.host.environment
         ports = dict([(port.name, port.number) for port in node.ports.all()])
-        if sha:
+        if release:
+            sha = release.sha
             app_path = None
+            image = node.get_image(local=False, private=True)
         else:
+            sha = None
             app_path = env.app_paths[node.name]
+            image = node.get_image(local=True)
 
-        task = self.run_task('nodes/%s' % str(node.pk), 'pull', {
+        task = self.run_task('nodes/%s' % node.pk, 'pull', {
             'sha': sha,
             'app_path': app_path,
             'ports': json.dumps(ports),
             'env_id': str(env.pk),
             'env_name': env.name,
-            'image': node.get_image(local=True, private=True)
+            'image': image
         })
 
     def add_instance(self, instance):
@@ -57,4 +63,4 @@ class AgentClient(object):
                 break
 
     def get_url(self, resource):
-        return urljoin(self.base_url, 'v1', resource)
+        return urljoin(self.base_url, 'v1/' + resource)

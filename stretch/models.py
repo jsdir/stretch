@@ -212,10 +212,10 @@ class Environment(AuditedModel):
                 # Object is release
                 # The release can be deployed immediately since the source
                 # images were compiled and pushed when the release was created.
-                self._deploy_to_instances(obj.sha)
+                self._deploy_to_instances(obj)
         self.save()
 
-    def _deploy_to_instances(self, sha=None):
+    def _deploy_to_instances(self, release=None):
         """
         Pulls all associated nodes for every host in the environment. After the
         nodes are pulled, all associated instances are restarted. Since this
@@ -241,8 +241,8 @@ class Environment(AuditedModel):
         contains.
 
         :Parameters:
-          - `sha`: the sha of the release to deploy. Left `None` if a source is
-          being deployed.
+          - `release`: the release to deploy. Left `None` if a source is being
+          deployed.
         """
 
         group_pools = {None: pool.Group()}
@@ -254,7 +254,7 @@ class Environment(AuditedModel):
         for host in self.hosts.all():
             if host.group in group_pools:
                 group_pool = group_pools[host.group]
-            host_pool.spawn(host.pull_nodes, group_pool, sha)
+            host_pool.spawn(host.pull_nodes, group_pool, release)
 
         [p.join() for p in group_pools.values()]
 
@@ -431,7 +431,19 @@ class Instance(AuditedModel):
         """
         instance = cls(environment=env, host=host, node=node)
         instance.save()
-        instance.host.agent.add_instance(instance)
+
+        # Add the instance's node to the agent if it isn't there already.
+        if node not in host.nodes:
+            if env.current_release:
+                # Use the environment's release
+                host.agent.pull(node, release=env.current_release)
+            elif env.using_source:
+                host.agent.pull(node)
+            else:
+                # Environment has not yet been deployed to
+                pass
+
+        host.agent.add_instance(instance)
 
     def reload(self):
         """
@@ -656,12 +668,8 @@ class Host(AuditedModel):
         host.save()
         return host
 
-    def pull_nodes(self, group_pool, sha=None):
-        nodes = []
-        for instance in self.instances.all():
-            if instance.node not in nodes:
-                nodes.append(instance.node)
-                self.agent.pull(instance.node, sha)
+    def pull_nodes(self, group_pool, release=None):
+        [self.agent.pull(node, release) for node in self.nodes]
 
         for instance in self.instances.get():
             group_pool.spawn(instance.restart)
@@ -710,6 +718,14 @@ class Host(AuditedModel):
 
     def _call(self, *args, **kwargs):
         return salt_client().cmd(self.fqdn, *args, **kwargs)
+
+    @property
+    def nodes(self):
+        nodes = []
+        for instance in self.instances.all():
+            if instance.node not in nodes:
+                nodes.append(instance.node)
+        return nodes
 
     @property
     @utils.memoized
