@@ -434,6 +434,7 @@ class Instance(AuditedModel):
 
         # Add the instance's node to the agent if it isn't there already.
         if node not in host.nodes:
+            host.agent.add_node(node)
             if env.current_release:
                 # Use the environment's release
                 host.agent.pull(node, release=env.current_release)
@@ -457,10 +458,9 @@ class Instance(AuditedModel):
         """
         Returns the instance's parent load balancer.
         """
-        lb = None
         if self.host.group:
-            lb = self.host.group.load_balancer
-        return lb
+            return self.host.group.load_balancer
+        return None
 
     @property
     def config_key(self):

@@ -22,6 +22,18 @@ class TestClient(TestCase):
         self.host.environment.app_paths = {'node': '/path'}
         self.client = AgentClient(self.host)
 
+    def test_add_node(self):
+        node = mock_attr(pk=1)
+        self.client.add_node(node)
+        self.requests.post.assert_called_with(
+            'https://127.0.0.1:1337/v1/nodes', data={'id': '1'})
+
+    def test_remove_node(self):
+        node = mock_attr(pk=1)
+        self.client.remove_node(node)
+        self.requests.delete.assert_called_with(
+            'https://127.0.0.1:1337/v1/nodes/1')
+
     def test_pull_with_release(self):
         node = mock_attr(name='node', pk=1)
         node.get_image.return_value = 'image'
