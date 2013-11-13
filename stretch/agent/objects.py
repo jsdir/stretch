@@ -9,16 +9,18 @@ from stretch.agent.app import TaskException, agent_dir, api
 from stretch.agent import resources
 
 
-config_manager = config_managers.EtcdConfigManager('127.0.0.1:4001')
-try:
-    agent_host = os.environ['AGENT_HOST']
-except KeyError:
-    raise Exception('"AGENT_HOST" environment variable not set')
-
-
 class Instance(resources.PersistentObject):
     name = 'instance'
     attrs = {'cid': None, 'endpoint': None}
+
+    def __init__(self, *args, **kwargs):
+        self.config_manager = config_managers.EtcdConfigManager(
+                              '127.0.0.1:4001')
+        try:
+            self.agent_host = os.environ['AGENT_HOST']
+        except KeyError:
+            raise Exception('"AGENT_HOST" environment variable not set')
+        super(Instance, self).__init__(*args, **kwargs)
 
     @classmethod
     def create(cls, args):
@@ -74,7 +76,7 @@ class Instance(resources.PersistentObject):
 
         self.data['cid'] = cid
         self.data['endpoint'] = json.dumps({
-            'host': agent_host, 'ports': ports
+            'host': self.agent_host, 'ports': ports
         })
         self.save()
 
@@ -83,7 +85,7 @@ class Instance(resources.PersistentObject):
             raise TaskException('container is already stopped')
 
         # Remove from config
-        config_manager.delete(self.data['config_key'])
+        self.config_manager.delete(self.data['config_key'])
 
         # Stop container
         utils.run_cmd(['docker', 'stop', self.data['cid']])
@@ -92,7 +94,7 @@ class Instance(resources.PersistentObject):
         self.save()
 
     def set_endpoint(self):
-        config_manager.set(self.data['config_key'], self.data['endpoint'])
+        self.config_manager.set(self.data['config_key'], self.data['endpoint'])
 
     def get_node(self):
         if self.data['node_id']:
@@ -185,11 +187,12 @@ def reload_instance(instance, args):
     instance.reload()
 
 
+"""
 resources.add_api_resource('instances', InstanceResource, InstanceListResource)
 resources.add_task_resource('instances', Instance, {
     'restart': {'task': restart_instance},
     'reload': {'task': reload_instance},
-})
+})"""
 
 
 class LoadBalancer(resources.PersistentObject):
@@ -221,7 +224,7 @@ class LoadBalancer(resources.PersistentObject):
             yield cls(lb['_id'])
 
 
-class Task(PersistentObject):
+class Task(resources.PersistentObject):
     name = 'task'
     attrs = {
         'status': 'PENDING',
@@ -304,6 +307,39 @@ def get_task_resources(obj, tasks):
 
 class Node(resources.PersistentObject):
     name = 'node'
+    attrs = {
+        'env_id': None,
+        'env_name': None,
+        'app_path': None,
+        'sha': None,
+        'ports': {},
+        'image': None
+    }
+
+    def pull(self, args):
+        # TODO: accept an id argument and automatically create node if that is
+        # supplied with the pull request.
+        # Pull image
+        if not args['app_path']:
+            utils.run_cmd(['docker', 'pull', args['image']])
+        # Pull templates
+        templates_path = self.get_templates_path()
+        src = 'salt://templates/%s/%s' % (args['env_id'], self.data['_id'])
+        caller_client().function('cp.get_dir', src, templates_path)
+        # Remove all contents before adding new templates
+        utils.clear_path(templates_path)
+        node.update(args)
+
+    def get_templates_path(self):
+        return os.path.join(agent_dir, 'templates', 'nodes', self.data['_id'])
+
+    def delete(self):
+        # TODO: delete all docker images
+        super(Node, self).delete()
+
+    @property
+    def pulled(self):
+        return self.data['sha'] or self.data['app_path']
 
 
 class NodeResource(resources.ObjectResource):
@@ -314,4 +350,33 @@ class NodeListResource(resources.ObjectListResource):
     obj_class = Node
 
 
+def configure_parser(parser):
+    parser.add_argument('sha', type=str)
+    parser.add_argument('app_path', type=str)
+    parser.add_argument('ports', type=str, required=True)
+    parser.add_argument('env_id', type=str, required=True)
+    parser.add_argument('env_name', type=str, required=True)
+    parser.add_argument('image', type=str, required=True)
+
+
+def verify_args(args):
+    args['ports'] = json.loads(args['ports'])
+    if not args['sha'] and not args['sha']:
+        raise Exception('neither `sha` nor `app_path` was specified')
+
+
+def pull(node, args):
+    args['ports'] = json.loads(args['ports'])
+    node.pull(args)
+
+
+"""
 resources.add_api_resource('nodes', NodeResource, NodeListResource)
+resources.add_task_resource('nodes', Node, {
+    'pull': {
+        'parser_config': configure_parser,
+        'verify_args': verify_args,
+        'task': pull
+    }
+})
+"""

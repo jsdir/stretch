@@ -1,8 +1,7 @@
 import pymongo
-from flask.ext.restful import reqparse, Resource
+from flask.ext.restful import reqparse, Resource, abort
 
 from stretch import utils
-#from stretch.agent import tasks
 from stretch.agent.app import db, api
 
 
@@ -21,11 +20,11 @@ class PersistentObject(object):
     @classmethod
     def create(cls, args):
         args['_id'] = args.pop('id')
-        utils.update(args, self.attrs)
+        utils.update(args, cls.attrs)
         try:
-            self.collection.insert(args)
+            cls.get_collection().insert(args)
         except pymongo.errors.DuplicateKeyError as e:
-            self.abort_exists()
+            cls.abort_exists()
         return cls(args['_id'])
 
     @classmethod

@@ -7,7 +7,7 @@ from django.conf import settings
 
 import stretch
 from stretch.salt_api import caller_client
-from stretch.agent.loadbalancers import LoadBalancer
+from stretch.agent.objects import LoadBalancer
 from stretch import utils
 
 
