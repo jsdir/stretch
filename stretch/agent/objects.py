@@ -1,10 +1,12 @@
 import os
 import json
+import uuid
+from datetime import datetime
 from flask.ext.restful import reqparse
 
 from stretch import utils, config_managers
-from stretch.agent.app import TaskException, agent_dir
-from stretch.agent import resources, nodes
+from stretch.agent.app import TaskException, agent_dir, api
+from stretch.agent import resources
 
 
 config_manager = config_managers.EtcdConfigManager('127.0.0.1:4001')
@@ -188,3 +190,128 @@ resources.add_task_resource('instances', Instance, {
     'restart': {'task': restart_instance},
     'reload': {'task': reload_instance},
 })
+
+
+class LoadBalancer(resources.PersistentObject):
+    name = 'loadbalancer'
+
+    @classmethod
+    def create(cls, args):
+        super(LoadBalancer, self).create(args)
+        self.start()
+
+    def delete(self):
+        db.endpoints.remove({'lb_id': self.data['_id']})
+        self.stop()
+        super(Instance, self).delete()
+
+    def start(self):
+        get_client().start_lb(self.data['_id'])
+
+    def stop(self):
+        get_client().stop_lb(self.data['_id'])
+
+    @classmethod
+    def start_all(cls):
+        [lb.start() for lb in cls.get_lbs()]
+
+    @classmethod
+    def get_lbs(cls):
+        for lb in self.collection.find(fields=['_id']):
+            yield cls(lb['_id'])
+
+
+class Task(PersistentObject):
+    name = 'task'
+    attrs = {
+        'status': 'PENDING',
+        'error': None,
+        'started_at': None,
+        'ended_at': None
+    }
+
+    @classmethod
+    def get_object_tasks(cls, object_id, object_type):
+        return {'results': list(cls.get_collection().find({
+            'object_id': object_id,
+            'object_type': object_type
+        }))}
+
+    def run(self, func, args, obj):
+        self.update({'status': 'RUNNING', 'started_at': datetime.utcnow()})
+        try:
+            func(obj, args)
+        except TaskException as e:
+            self.update({'status': 'FAILED', 'error': e.message})
+        else:
+            self.update({'status': 'FINISHED'})
+        self.update({'ended_at': datetime.utcnow()})
+
+
+# TODO: Lock group tasks across processes; use celery or db
+def get_task_resources(obj, tasks):
+
+    class TaskListResource(Resource):
+        obj_class = Task
+
+        def get(self, object_id):
+            return self.obj_class.get_object_tasks(object_id, obj.name)
+
+        def post(self, object_id):
+            names = tasks.values()
+            parser = reqparse.RequestParser()
+            parser.add_argument('task', type=str, required=True, choices=names)
+            args = parser.parse_args()
+            task = tasks[args['task']]
+
+            parser_config = task.get('parser_config')
+            task_args = args
+            if parser_config:
+                task_parser = reqparse.RequestParser()
+                parser_config(task_parser)
+                task_args = task_parser.parse_args()
+            task_args.pop('task', None)
+
+            verify_args = task.get('verify_args')
+            if verify_args:
+                verify_args(task_args)
+
+            task_func = task.get('task')
+            if not task_func:
+                raise TaskException('no task defined')
+
+            task = Task.create({
+                'id': str(uuid.uuid4()),
+                'object_id': object_id,
+                'object_name': obj.name
+            })
+
+            Thread(target=task.run(task_func, task_args,
+                                   obj(object_id))).start()
+            return task.data, 201
+
+    class TaskResource(ObjectResource):
+        obj_class = Task
+
+        def get(self, object_id, task_id):
+            super(TaskResource, self).get(task_id)
+
+        def delete(self, object_id, task_id):
+            super(TaskResource, self).delete(task_id)
+
+    return TaskResource, TaskListResource
+
+
+class Node(resources.PersistentObject):
+    name = 'node'
+
+
+class NodeResource(resources.ObjectResource):
+    obj_class = Node
+
+
+class NodeListResource(resources.ObjectListResource):
+    obj_class = Node
+
+
+resources.add_api_resource('nodes', NodeResource, NodeListResource)

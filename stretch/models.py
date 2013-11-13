@@ -252,10 +252,9 @@ class Environment(AuditedModel):
 
         host_pool = pool.Pool(settings.STRETCH_BATCH_SIZE)
         for host in self.hosts.all():
-            if host.group in group_pools:
-                group_pool = group_pools[host.group]
-            host_pool.spawn(host.pull_nodes, group_pool, release)
+            host_pool.spawn(host.pull_nodes, group_pools[host.group], release)
 
+        host_pool.join()
         [p.join() for p in group_pools.values()]
 
     @classmethod

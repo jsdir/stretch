@@ -7,12 +7,16 @@ from stretch.agent.app import db, api
 
 
 class PersistentObject(object):
+    name = ''
     attrs = {}
 
     def __init__(self, _id):
-        self.data = self.get_collection().find_one({'_id': _id})
-        if not self.data:
+        data = self.get_collection().find_one({'_id': _id})
+        if not data:
             self.abort_nonexistent()
+        else:
+            data['id'] = data.pop('_id')
+            self.data = data
 
     @classmethod
     def create(cls, args):
@@ -37,22 +41,30 @@ class PersistentObject(object):
         return {'results': list(cls.get_collection().find())}
 
     def save(self):
-        self.update(self.data)
+        data = self.data
+        data.pop('id')
+        self.update(data)
 
     def update(self, data):
-        _id = self.data['_id']
+        _id = self.data.get('id')
         self.get_collection().update({'_id': _id}, {'$set': data}, upsert=True)
 
     def delete(self):
-        self.get_collection().remove({'_id': self.data['_id']})
-        # Clean up tasks
-        """
-        for task in tasks.Task.get_object_tasks(self.data['_id'], self.name):
-            tasks.Task(task['_id']).delete()"""
+        self.get_collection().remove({'_id': self.data['id']})
+        # TODO: Clean up associated tasks
 
     @classmethod
     def get_collection(cls):
         return db['%ss' % cls.name]
+
+
+class ObjectResource(Resource):
+    def get(self, _id):
+        return self.obj_class(_id).data
+
+    def delete(self, _id):
+        self.obj_class(_id).delete()
+        return '', 204
 
 
 class ObjectListResource(Resource):
@@ -67,21 +79,13 @@ class ObjectListResource(Resource):
         return obj.data, 201
 
 
-class ObjectResource(Resource):
-    def get(self, _id):
-        return self.obj_class(_id).data
-
-    def delete(self, _id):
-        self.obj_class(_id).delete()
-        return '', 204
-
-
 def add_api_resource(plural_name, resource, list_resource):
     prefix = '/v1/%s' % plural_name
     api.add_resource(list_resource, prefix)
     api.add_resource(resource, '%s/<string:_id>' % prefix)
 
 
+'''
 def add_task_resource(plural_name, obj, tasks):
     pass
     """
@@ -89,4 +93,4 @@ def add_task_resource(plural_name, obj, tasks):
     prefix = '/v1/%s' % plural_name
     api.add_resource(resource_list, '%s/<string:_id>/tasks' % prefix)
     api.add_resource(resource,
-                     '%s/<string:_id>/tasks/<string:task_id>' % prefix)"""
+                     '%s/<string:_id>/tasks/<string:task_id>' % prefix)"""'''

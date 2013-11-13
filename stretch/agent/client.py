@@ -2,8 +2,8 @@ import json
 import requests
 from urlparse import urljoin
 from django.conf import settings
-# from gevent import monkey
-# monkey.patch_time()
+import gevent
+# TODO: patch networking IO
 
 
 class AgentClient(object):
