@@ -16,6 +16,10 @@ class TestClient(TestCase):
         self.run_task = patcher.start()
         self.addCleanup(patcher.stop)
 
+        patcher = patch_settings('STRETCH_CERTS', {'agent': '/cert.pem'})
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
         self.requests
         self.host = mock_attr(address='127.0.0.1')
         self.host.environment = mock_attr(name='env', pk=2)
@@ -26,13 +30,14 @@ class TestClient(TestCase):
         node = mock_attr(pk=1)
         self.client.add_node(node)
         self.requests.post.assert_called_with(
-            'https://127.0.0.1:1337/v1/nodes', data={'id': '1'})
+            'https://127.0.0.1:1337/v1/nodes', data={'id': '1'},
+            cert='/cert.pem')
 
     def test_remove_node(self):
         node = mock_attr(pk=1)
         self.client.remove_node(node)
         self.requests.delete.assert_called_with(
-            'https://127.0.0.1:1337/v1/nodes/1')
+            'https://127.0.0.1:1337/v1/nodes/1', cert='/cert.pem')
 
     def test_pull_with_release(self):
         node = mock_attr(name='node', pk=1)
@@ -86,13 +91,13 @@ class TestClient(TestCase):
                 'config_key': '/key',
                 'id': '1',
                 'host_name': 'host_name'
-        })
+        }, cert='/cert.pem')
 
     def test_remove_instance(self):
         instance = mock_attr(pk=1)
         self.client.remove_instance(instance)
         self.requests.delete.assert_called_with(
-            'https://127.0.0.1:1337/v1/instances/1')
+            'https://127.0.0.1:1337/v1/instances/1', cert='/cert.pem')
 
     def test_reload_instance(self):
         instance = mock_attr(pk=1)

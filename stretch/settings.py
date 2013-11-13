@@ -229,6 +229,9 @@ STRETCH_REGISTRY_CLIENT_CERT = '/etc/stretch/pki/registry.pem'
 # .pem (.crt, .key)
 # Distribute STRETCH_REGISTRY_CLIENT_CERT to all agents
 STRETCH_CLIENT_CERT = None
+STRETCH_CERTS = {
+    'agent': '/path/to/agent.pem'
+}
 
 STRETCH_AGENT_PORT = 24225
 
