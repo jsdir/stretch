@@ -37,10 +37,13 @@ class PersistentObject(object):
 
     @classmethod
     def all(cls):
-        return {'results': list(cls.get_collection().find())}
+        results = list(cls.get_collection().find())
+        for obj in results:
+            obj['id'] = obj.pop('_id')
+        return {'results': results}
 
     def save(self):
-        data = self.data
+        data = dict(self.data)
         data.pop('id')
         self.update(data)
 

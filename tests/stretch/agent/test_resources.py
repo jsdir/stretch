@@ -11,12 +11,12 @@ class TestPersistentObject(TestCase):
 
         class Object(resources.PersistentObject):
             name = 'object'
-            attrs = {'foo': 'bar', 'key': 'value'}
 
         self.obj_class = Object
-        self.obj = self.obj_class.create({'id': 3, 'foo': 'foo'})
+        self.obj = self.obj_class.create({'id': 3, 'bar': 'foo'})
 
     def test_create(self):
+        self.obj_class.attrs = {'foo': 'bar'}
         self.obj_class.abort_exists = Mock()
         self.obj_class.abort_nonexistent = Mock()
 
@@ -40,4 +40,17 @@ class TestPersistentObject(TestCase):
         abort.assert_called_with(409, message='Object already exists')
 
     def test_all(self):
-        pass
+        self.obj_class.create({'id': 4, 'bar': 'foo'})
+        self.assertEquals(self.obj_class.all(), {'results': [
+            {'id': 3, 'bar': 'foo'}, {'id': 4, 'bar': 'foo'}
+        ]})
+
+    def test_save(self):
+        self.obj.data['new'] = 'bar'
+        self.obj.save()
+        obj = self.db.objects.find_one({'_id': 3})
+        self.assertEquals(obj.get('new'), 'bar')
+
+    def test_delete(self):
+        self.obj.delete()
+        self.assertEquals(self.db.objects.find_one({'_id': 3}), None)
