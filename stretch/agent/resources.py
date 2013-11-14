@@ -62,10 +62,10 @@ class PersistentObject(object):
 
 class ObjectResource(Resource):
     def get(self, _id):
-        return self.obj_class(_id).data
+        return self.obj_class(str(_id)).data
 
     def delete(self, _id):
-        self.obj_class(_id).delete()
+        self.obj_class(str(_id)).delete()
         return '', 204
 
 
