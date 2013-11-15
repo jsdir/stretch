@@ -199,9 +199,10 @@ class LoadBalancer(resources.PersistentObject):
     name = 'loadbalancer'
 
     @classmethod
-    def create(cls, args):
-        super(LoadBalancer, self).create(args)
-        self.start()
+    def create(cls, _id):
+        lb = super(LoadBalancer, cls).create({'id': _id})
+        lb.start()
+        return lb
 
     def delete(self):
         db.endpoints.remove({'lb_id': self.data['_id']})
@@ -216,12 +217,7 @@ class LoadBalancer(resources.PersistentObject):
 
     @classmethod
     def start_all(cls):
-        [lb.start() for lb in cls.get_lbs()]
-
-    @classmethod
-    def get_lbs(cls):
-        for lb in self.collection.find(fields=['_id']):
-            yield cls(lb['_id'])
+        [lb.start() for lb in cls.all_objects()]
 
 
 class Task(resources.PersistentObject):

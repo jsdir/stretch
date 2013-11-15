@@ -42,6 +42,11 @@ class PersistentObject(object):
             obj['id'] = obj.pop('_id')
         return {'results': results}
 
+    @classmethod
+    def all_objects(cls):
+        for obj in cls.get_collection().find(fields='_id'):
+            yield cls(obj['_id'])
+
     def save(self):
         data = dict(self.data)
         data.pop('id')

@@ -15,7 +15,6 @@ class TestPersistentObject(TestCase):
             name = 'object'
 
         self.obj_class = Object
-        self.obj = self.obj_class.create({'id': 3, 'bar': 'foo'})
 
     def test_create(self):
         self.obj_class.attrs = {'foo': 'bar'}
@@ -36,24 +35,37 @@ class TestPersistentObject(TestCase):
 
     @patch('stretch.agent.resources.abort')
     def test_aborts(self, abort):
+        self.obj = self.obj_class.create({'id': 3, 'bar': 'foo'})
         self.obj.abort_nonexistent()
         abort.assert_called_with(404, message='Object does not exist')
         self.obj.abort_exists()
         abort.assert_called_with(409, message='Object already exists')
 
     def test_all(self):
+        self.obj_class.create({'id': 3, 'bar': 'foo'})
         self.obj_class.create({'id': 4, 'bar': 'foo'})
         self.assertEquals(self.obj_class.all(), {'results': [
             {'id': 3, 'bar': 'foo'}, {'id': 4, 'bar': 'foo'}
         ]})
 
+    def test_all_objects(self):
+        objs = [
+            self.obj_class.create({'id': 1, 'bar': 'foo'}),
+            self.obj_class.create({'id': 2, 'bar': 'foo'})
+        ]
+        all_objs = list(self.obj_class.all_objects())
+        self.assertEquals(all_objs[0].data, {'id': 1, 'bar': 'foo'})
+        self.assertEquals(all_objs[1].data, {'id': 2, 'bar': 'foo'})
+
     def test_save(self):
+        self.obj = self.obj_class.create({'id': 3, 'bar': 'foo'})
         self.obj.data['new'] = 'bar'
         self.obj.save()
         obj = self.db.objects.find_one({'_id': 3})
         self.assertEquals(obj.get('new'), 'bar')
 
     def test_delete(self):
+        self.obj = self.obj_class.create({'id': 3, 'bar': 'foo'})
         self.obj.delete()
         self.assertEquals(self.db.objects.find_one({'_id': 3}), None)
 
