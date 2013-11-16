@@ -4,7 +4,7 @@ The stretch agent is a daemon that runs on every host controlled by stretch. The
 
 On the node's host, the `stretch` minion module interfaces with the agent.
 
-A file buffer is used to handle the `files`, `templates`, and configurations.
+A file buffer is used to handle the `files` and `templates`.
 
 Uses a:
  - {instance: active_configuration} state
