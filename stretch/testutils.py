@@ -1,6 +1,10 @@
 import os
+import mongomock
 from cStringIO import StringIO
-from mock import Mock, MagicMock, patch
+from mock import Mock, MagicMock
+from flask.ext.testing import TestCase
+
+from stretch.agent import resources, app
 
 
 class MockFileSystem(object):
@@ -73,6 +77,15 @@ class MockFileSystem(object):
             else:
                 filenames.append(key)
         yield (path, dirnames, filenames)
+
+
+class AgentTestCase(TestCase):
+    def setUp(self):
+        self.db = resources.db = mongomock.Connection().db
+
+    def create_app(self):
+        app.app.config['TESTING'] = True
+        return app.app
 
 
 def mock_attr(**kwargs):

@@ -18,12 +18,6 @@ class AgentTestCase(TestCase):
         agent.db = self.db = mongomock.Connection().db
 
 
-class TestApi(AgentTestCase):
-    def test_index(self):
-        rv = self.client.get('/')
-        assert_in('stretch-agent', rv.data)
-
-
 class TestLoadBalancer(AgentTestCase):
     @patch('stretch.agent.resources.PersistentObject')
     def test_create(self, obj):
@@ -300,11 +294,6 @@ class TestTask(AgentTestCase):
         pass
 
     def test_create_task(self):
-        pass
-
-
-class TestHost(AgentTestCase):
-    def test_a(self):
         pass
 
 

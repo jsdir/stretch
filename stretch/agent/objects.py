@@ -2,7 +2,6 @@ import os
 import json
 import uuid
 from datetime import datetime
-from flask.ext.restful import reqparse
 
 from stretch import utils, config_managers
 from stretch.agent.app import TaskException, agent_dir, api
@@ -52,7 +51,8 @@ class Instance(resources.PersistentObject):
 
     def start(self):
         if self.running:
-            raise TaskException('container is already running')
+            log.info('container is already running')
+            return
 
         node = self.get_node()
         if not node:
@@ -82,7 +82,8 @@ class Instance(resources.PersistentObject):
 
     def stop(self):
         if not self.running:
-            raise TaskException('container is already stopped')
+            log.info('container is already stopped')
+            return
 
         # Remove from config
         self.config_manager.delete(self.data['config_key'])
@@ -164,37 +165,6 @@ class Instance(resources.PersistentObject):
         return self.data['cid'] != None
 
 
-class InstanceListResource(resources.ObjectListResource):
-    obj_class = Instance
-
-    def post(self):
-        parser = reqparse.RequestParser()
-        parser.add_argument('node_id', type=str, required=True)
-        parser.add_argument('host_name', type=str, required=True)
-        parser.add_argument('config_key', type=str, required=True)
-        super(InstanceListResource, self).post(parser)
-
-
-class InstanceResource(resources.ObjectResource):
-    obj_class = Instance
-
-
-def restart_instance(instance, args):
-    instance.restart()
-
-
-def reload_instance(instance, args):
-    instance.reload()
-
-
-"""
-resources.add_api_resource('instances', InstanceResource, InstanceListResource)
-resources.add_task_resource('instances', Instance, {
-    'restart': {'task': restart_instance},
-    'reload': {'task': reload_instance},
-})"""
-
-
 class LoadBalancer(resources.PersistentObject):
     name = 'loadbalancer'
 
@@ -247,60 +217,6 @@ class Task(resources.PersistentObject):
         self.update({'ended_at': datetime.utcnow()})
 
 
-# TODO: Lock group tasks across processes; use celery or db
-def get_task_resources(obj, tasks):
-
-    class TaskListResource(Resource):
-        obj_class = Task
-
-        def get(self, object_id):
-            return self.obj_class.get_object_tasks(object_id, obj.name)
-
-        def post(self, object_id):
-            names = tasks.values()
-            parser = reqparse.RequestParser()
-            parser.add_argument('task', type=str, required=True, choices=names)
-            args = parser.parse_args()
-            task = tasks[args['task']]
-
-            parser_config = task.get('parser_config')
-            task_args = args
-            if parser_config:
-                task_parser = reqparse.RequestParser()
-                parser_config(task_parser)
-                task_args = task_parser.parse_args()
-            task_args.pop('task', None)
-
-            verify_args = task.get('verify_args')
-            if verify_args:
-                verify_args(task_args)
-
-            task_func = task.get('task')
-            if not task_func:
-                raise TaskException('no task defined')
-
-            task = Task.create({
-                'id': str(uuid.uuid4()),
-                'object_id': object_id,
-                'object_name': obj.name
-            })
-
-            Thread(target=task.run(task_func, task_args,
-                                   obj(object_id))).start()
-            return task.data, 201
-
-    class TaskResource(ObjectResource):
-        obj_class = Task
-
-        def get(self, object_id, task_id):
-            super(TaskResource, self).get(task_id)
-
-        def delete(self, object_id, task_id):
-            super(TaskResource, self).delete(task_id)
-
-    return TaskResource, TaskListResource
-
-
 class Node(resources.PersistentObject):
     name = 'node'
     attrs = {
@@ -336,43 +252,3 @@ class Node(resources.PersistentObject):
     @property
     def pulled(self):
         return self.data['sha'] or self.data['app_path']
-
-
-class NodeResource(resources.ObjectResource):
-    obj_class = Node
-
-
-class NodeListResource(resources.ObjectListResource):
-    obj_class = Node
-
-
-def configure_parser(parser):
-    parser.add_argument('sha', type=str)
-    parser.add_argument('app_path', type=str)
-    parser.add_argument('ports', type=str, required=True)
-    parser.add_argument('env_id', type=str, required=True)
-    parser.add_argument('env_name', type=str, required=True)
-    parser.add_argument('image', type=str, required=True)
-
-
-def verify_args(args):
-    args['ports'] = json.loads(args['ports'])
-    if not args['sha'] and not args['sha']:
-        raise Exception('neither `sha` nor `app_path` was specified')
-
-
-def pull(node, args):
-    args['ports'] = json.loads(args['ports'])
-    node.pull(args)
-
-
-"""
-resources.add_api_resource('nodes', NodeResource, NodeListResource)
-resources.add_task_resource('nodes', Node, {
-    'pull': {
-        'parser_config': configure_parser,
-        'verify_args': verify_args,
-        'task': pull
-    }
-})
-"""

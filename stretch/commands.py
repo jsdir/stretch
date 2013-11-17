@@ -29,7 +29,7 @@ def run(args=sys.argv[1:]):
     args = parser.parse_args(args)
 
     if args.command == 'agent':
-        subprocess.call(['gunicorn', 'stretch.agent.app:app', '-w', '4'])
+        subprocess.call(['gunicorn', 'stretch.agent.api:app', '-w', '4'])
         #agent.run()
     elif args.command == 'lb_supervisor':
         supervisors.run_lb_supervisor()

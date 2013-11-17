@@ -12,8 +12,3 @@ agent_dir = '/var/lib/stretch/agent'
 
 class TaskException(Exception):
     pass
-
-
-@app.route('/')
-def index():
-    return 'stretch-agent'

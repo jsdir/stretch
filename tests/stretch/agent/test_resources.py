@@ -7,9 +7,9 @@ from stretch import testutils
 from stretch.agent import resources, app
 
 
-class TestPersistentObject(TestCase):
+class TestPersistentObject(testutils.AgentTestCase):
     def setUp(self):
-        self.db = resources.db = mongomock.Connection().db
+        super(TestPersistentObject, self).setUp()
 
         class Object(resources.PersistentObject):
             name = 'object'
@@ -112,11 +112,7 @@ class TestObjectListResource(TestCase):
         self.obj.create.assert_called_with({'key': 'value'})
 
 
-class TestResources(FlaskTestCase):
-    def create_app(self):
-        app.app.config['TESTING'] = True
-        return app.app
-
+class TestResources(testutils.AgentTestCase):
     def test_add_api_resource(self):
         resource = resources.ObjectResource
         resource.get = Mock()
