@@ -8,6 +8,7 @@ from stretch.agent.app import db, api
 class PersistentObject(object):
     name = ''
     attrs = {}
+    data = {}
 
     def __init__(self, _id):
         data = self.get_collection().find_one({'_id': _id})
@@ -44,7 +45,7 @@ class PersistentObject(object):
 
     @classmethod
     def all_objects(cls):
-        for obj in cls.get_collection().find(fields='_id'):
+        for obj in cls.get_collection().find(fields=['_id']):
             yield cls(obj['_id'])
 
     def save(self):

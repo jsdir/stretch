@@ -4,7 +4,7 @@ import uuid
 from datetime import datetime
 
 from stretch import utils, config_managers
-from stretch.agent.app import TaskException, agent_dir, api
+from stretch.agent.app import TaskException, agent_dir, container_dir
 from stretch.agent import resources
 
 
@@ -12,21 +12,16 @@ class Instance(resources.PersistentObject):
     name = 'instance'
     attrs = {'cid': None, 'endpoint': None}
 
-    def __init__(self, *args, **kwargs):
-        self.config_manager = config_managers.EtcdConfigManager(
-                              '127.0.0.1:4001')
-        try:
-            self.agent_host = os.environ['AGENT_HOST']
-        except KeyError:
-            raise Exception('"AGENT_HOST" environment variable not set')
-        super(Instance, self).__init__(*args, **kwargs)
-
     @classmethod
     def create(cls, args):
-        super(Instance, self).create(args)
+        super(Instance, cls).create(args)
         # TODO: have start/stop behave as individual tasks, use HTTP request
-        # blocking
-        self.start()
+        # Attempt to start,
+        try:
+            # Attempt to start, but don't fail if the node isn't ready
+            cls.start()
+        except TaskException:
+            pass
 
     def delete(self):
         if self.running:
@@ -99,7 +94,7 @@ class Instance(resources.PersistentObject):
 
     def get_node(self):
         if self.data['node_id']:
-            return nodes.Node(self.data['node_id'])
+            return Node(self.data['node_id'])
         return None
 
     def get_run_args(self, node):
@@ -153,12 +148,20 @@ class Instance(resources.PersistentObject):
 
     @classmethod
     def start_all(cls):
-        [instance.start() for instance in cls.get_instances()]
+        [instance.start() for instance in cls.all_objects()]
 
-    @classmethod
-    def get_instances(cls):
-        for instance in self.collection.find(fields=['_id']):
-            yield cls(instance['_id'])
+    @property
+    @utils.memoized
+    def agent_host(self):
+        try:
+            return os.environ['AGENT_HOST']
+        except KeyError:
+            raise TaskException('"AGENT_HOST" environment variable not set')
+
+    @property
+    @utils.memoized
+    def config_manager(self):
+        return config_managers.EtcdConfigManager('127.0.0.1:4001')
 
     @property
     def running(self):
@@ -188,33 +191,6 @@ class LoadBalancer(resources.PersistentObject):
     @classmethod
     def start_all(cls):
         [lb.start() for lb in cls.all_objects()]
-
-
-class Task(resources.PersistentObject):
-    name = 'task'
-    attrs = {
-        'status': 'PENDING',
-        'error': None,
-        'started_at': None,
-        'ended_at': None
-    }
-
-    @classmethod
-    def get_object_tasks(cls, object_id, object_type):
-        return {'results': list(cls.get_collection().find({
-            'object_id': object_id,
-            'object_type': object_type
-        }))}
-
-    def run(self, func, args, obj):
-        self.update({'status': 'RUNNING', 'started_at': datetime.utcnow()})
-        try:
-            func(obj, args)
-        except TaskException as e:
-            self.update({'status': 'FAILED', 'error': e.message})
-        else:
-            self.update({'status': 'FINISHED'})
-        self.update({'ended_at': datetime.utcnow()})
 
 
 class Node(resources.PersistentObject):
@@ -252,3 +228,32 @@ class Node(resources.PersistentObject):
     @property
     def pulled(self):
         return self.data['sha'] or self.data['app_path']
+
+
+""" TODO: Use tasks instead of blocking HTTP requests
+class Task(resources.PersistentObject):
+    name = 'task'
+    attrs = {
+        'status': 'PENDING',
+        'error': None,
+        'started_at': None,
+        'ended_at': None
+    }
+
+    @classmethod
+    def get_object_tasks(cls, object_id, object_type):
+        return {'results': list(cls.get_collection().find({
+            'object_id': object_id,
+            'object_type': object_type
+        }))}
+
+    def run(self, func, args, obj):
+        self.update({'status': 'RUNNING', 'started_at': datetime.utcnow()})
+        try:
+            func(obj, args)
+        except TaskException as e:
+            self.update({'status': 'FAILED', 'error': e.message})
+        else:
+            self.update({'status': 'FINISHED'})
+        self.update({'ended_at': datetime.utcnow()})
+"""

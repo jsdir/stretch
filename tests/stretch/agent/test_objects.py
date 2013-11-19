@@ -1,9 +1,146 @@
+from mock import Mock, patch, DEFAULT, PropertyMock
+from nose.tools import raises, assert_raises
 from unittest import TestCase
+
+from stretch.agent import objects
+from stretch.agent.app import TaskException
+
+
+def patch_func(func):
+    return patch('stretch.agent.objects.resources.PersistentObject.%s'
+                 % func, Mock(return_value=None))
 
 
 class TestInstance(TestCase):
-    def test_get_instance(self):
-        pass
+    def setUp(self):
+        self.config = self.apply_patch(patch(
+            'stretch.config_managers.EtcdConfigManager'))
+        self.instance_save = self.apply_patch(patch_func('save'))
+        self.apply_patch(patch_func('__init__'))
+        self.apply_patch(patch('stretch.agent.objects.container_dir', '/var'))
+
+        self.instance = objects.Instance('1')
+
+    def apply_patch(self, patch):
+        obj = patch.start()
+        self.addCleanup(patch.stop)
+        return obj
+
+    @patch_func('create')
+    @patch.object(objects.Instance, 'start')
+    def test_should_start_when_created(self, start):
+        instance = objects.Instance.create({})
+        start.assert_called_with()
+
+    @patch_func('delete')
+    @patch.object(objects.Instance, 'stop')
+    def test_should_stop_when_deleted(self, stop):
+        self.instance.delete()
+        stop.assert_called_with()
+
+    @raises(TaskException)
+    @patch.object(objects.Instance, 'running', new_callable=PropertyMock)
+    def test_reload_should_fail_if_running(self, running):
+        running.return_value = False
+
+        self.instance.reload()
+
+    @patch('stretch.utils.run_cmd')
+    @patch.object(objects.Instance, 'restart')
+    @patch.object(objects.Instance, 'running', new_callable=PropertyMock)
+    def test_reload(self, running, restart, run_cmd):
+        running.return_value = True
+        run_cmd.return_value = ('output', 0)
+        self.instance.data['cid'] = 'cid'
+
+        self.instance.reload()
+
+        run_cmd.assert_called_with(['lxc-attach', '-n', 'cid', '--',
+            '/bin/bash', '/var/files/autoload.sh'], allow_errors=True)
+        assert not restart.called
+
+    @patch('stretch.utils.run_cmd')
+    @patch.object(objects.Instance, 'restart')
+    @patch.object(objects.Instance, 'running', new_callable=PropertyMock)
+    def test_should_restart_when_reload_fails(self, running, restart, run_cmd):
+        running.return_value = True
+        run_cmd.return_value = ('output', 1)
+        self.instance.data['cid'] = 'cid'
+
+        self.instance.reload()
+
+        run_cmd.assert_called_with(['lxc-attach', '-n', 'cid', '--',
+            '/bin/bash', '/var/files/autoload.sh'], allow_errors=True)
+        assert restart.called
+
+    def test_restart(self):
+        with patch.multiple(self.instance, stop=DEFAULT, start=DEFAULT) as f:
+            self.instance.restart()
+            f['stop'].assert_called_with()
+            f['start'].assert_called_with()
+
+    @patch.object(objects.Instance, 'running', new_callable=PropertyMock)
+    def test_should_only_start_when_ready(self, running):
+        running.return_value = False
+        self.instance.get_node = Mock(return_value=None)
+
+        with assert_raises(TaskException):
+            self.instance.start()
+
+        node = Mock()
+        node.pulled = False
+        self.instance.get_node.return_value = node
+
+        with assert_raises(TaskException):
+            self.instance.start()
+
+    """
+    @patch('stretch.utils.run_cmd')
+    @patch('stretch.agent.Instance.get_run_args')
+    @patch.object(objects.Instance, 'compile_templates')
+    @patch.object(objects.Instance, 'running', new_callable=PropertyMock)
+    def test_start(self, running, compile_templates, get_run_args, run_cmd):
+        running.return_value = True
+        node = Mock()
+        node.pulled = False
+        self.instance.get_node.return_value = node
+
+        self.instance.start()
+
+        compile_templates.assert_called_with(node)
+
+        instance = self.get_instance()
+        running.return_value = False
+        instance.get_node = Mock()
+        node = Mock()
+        instance.get_node.return_value = node
+        run_cmd.return_value = ('new_cid', 0)
+        instance.start()
+        self.assertEquals(instance.data['cid'], 'new_cid')
+    """
+
+    @patch('stretch.utils.run_cmd')
+    @patch.object(objects.Instance, 'config_manager',
+        new_callable=PropertyMock)
+    def test_stop(self, config_manager, run_cmd):
+        config_manager.return_value = cm = Mock()
+        self.instance.data['cid'] = 'cid'
+        self.instance.data['endpoint'] = 'endpoint'
+        self.instance.data['config_key'] = 'config_key'
+
+        self.instance.stop()
+
+        cm.delete.assert_called_with('config_key')
+        run_cmd.assert_called_with(['docker', 'stop', 'cid'])
+        self.assertEquals(self.instance.data['cid'], None)
+        self.assertEquals(self.instance.data['endpoint'], None)
+        self.instance_save.assert_called_with()
+
+    def test_running(self):
+        self.instance.data['cid'] = None
+        assert not self.instance.running
+        self.instance.data['cid'] = 'cid'
+        assert self.instance.running
 
 """
 import mongomock
