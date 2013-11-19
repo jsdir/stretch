@@ -4,9 +4,9 @@ from stretch import commands
 
 
 def test_run():
-    with patch('stretch.agent.run') as run:
-        commands.run(['agent'])
-        run.assert_called_with()
+    #with patch('stretch.agent.run') as run:
+    #    commands.run(['agent'])
+    #    run.assert_called_with()
 
     with patch('django.core.management.call_command') as call_command:
         commands.run(['autoload'])

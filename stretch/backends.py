@@ -61,10 +61,10 @@ class DockerBackend(Backend):
         pass
 
     def lb_add_endpoint(self, lb, host, port):
-        LoadBalancer(lb.backend_id).add_endpoint(host, port)
+        LoadBalancer(lb.pk).add_endpoint(host, port)
 
     def lb_remove_endpoint(self, lb, host, port):
-        LoadBalancer(lb.backend_id).remove_endpoint(host, port)
+        LoadBalancer(lb.pk).remove_endpoint(host, port)
 
     def create_lb(self, lb):
         LoadBalancer.create({'id': lb.pk})

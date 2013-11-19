@@ -1,7 +1,7 @@
 import os
 import mongomock
 from cStringIO import StringIO
-from mock import Mock, MagicMock
+from mock import Mock, MagicMock, patch
 from flask.ext.testing import TestCase
 
 from stretch.agent import resources, app

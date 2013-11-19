@@ -124,10 +124,10 @@ class TestEtcdConfigManager(TestCase):
         self.cm.delete('/key')
         self.etcd_client.delete.assert_called_with('/key')
 
-    def test_delete_recursive(self):
-        raise Exception
-        #self.cm.delete('/key')
-        #self.etcd_client.delete.assert_called_with('/key')
+    #def test_delete_recursive(self):
+    #    raise Exception
+    #    #self.cm.delete('/key')
+    #    #self.etcd_client.delete.assert_called_with('/key')
 
     @patch('etcd.Etcd')
     def test_init(self, client):

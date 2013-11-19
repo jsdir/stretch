@@ -111,7 +111,7 @@ class TestEnvironment(TestCase):
         self.env.using_source = False
         release.sha = 'sha'
         self.env._deploy_obj(release, deploy)
-        _deploy_to_instances.assert_called_with('sha')
+        _deploy_to_instances.assert_called_with(release)
         save.assert_called_with()
 
     def test_post_save_created(self):

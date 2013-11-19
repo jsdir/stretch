@@ -343,7 +343,7 @@ class Release(AuditedModel):
 
         TODO: clean up the temporary path when finished.
         """
-        tar_path = os.path.join(self._data_dir, self.archive_name)
+        tar_path = os.path.join(self.data_dir, self.archive_name)
         tmp_path = utils.temp_dir()
         tar_file = tarfile.open(tar_path)
         tar_file.extractall(tmp_path)
