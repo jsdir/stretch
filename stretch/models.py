@@ -23,7 +23,6 @@ from stretch import (signals, sources, utils, backends, parser, exceptions,
                      config_managers)
 
 from stretch.salt_api import salt_client, wheel_client
-#from stretch.agent import supervisors
 from stretch.agent.client import AgentClient
 
 
@@ -214,6 +213,12 @@ class Environment(AuditedModel):
                 # The release can be deployed immediately since the source
                 # images were compiled and pushed when the release was created.
                 self._deploy_to_instances(obj)
+
+        # Clean up temporary snapshots
+        snapshot.clean_up()
+        if deploy.existing_snapshot:
+            deploy.existing_snapshot.clean_up()
+
         self.save()
 
     def _deploy_to_instances(self, release=None):
@@ -341,7 +346,9 @@ class Release(AuditedModel):
         """
         Extracts the release and returns a Snapshot.
 
-        TODO: clean up the temporary path when finished.
+        A temporary folder is created for the snapshot. The initializer is
+        expected to clean up after usage with `snapshot.clean_up()`. This will
+        delete the associated temporary folder.
         """
         tar_path = os.path.join(self.data_dir, self.archive_name)
         tmp_path = utils.temp_dir()

@@ -120,6 +120,9 @@ class Snapshot(object):
                 app_paths[node.name] = node.app_path
         return app_paths
 
+    def clean_up(self):
+        utils.delete_path(self.path)
+
 
 class Node(object):
     def __init__(self, path, relative_path, snapshot, name=None):

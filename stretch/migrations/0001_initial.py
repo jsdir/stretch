@@ -109,7 +109,7 @@ class Migration(SchemaMigration):
             ('minimum_nodes', self.gf('django.db.models.fields.IntegerField')(default=1)),
             ('maximum_nodes', self.gf('django.db.models.fields.IntegerField')(null=True)),
             ('node', self.gf('django.db.models.fields.related.ForeignKey')(to=orm['stretch.Node'])),
-            ('load_balancer', self.gf('django.db.models.fields.related.OneToOneField')(to=orm['stretch.LoadBalancer'], unique=True, null=True)),
+            ('load_balancer', self.gf('django.db.models.fields.related.OneToOneField')(related_name='group', unique=True, null=True, to=orm['stretch.LoadBalancer'])),
         ))
         db.send_create_signal(u'stretch', ['Group'])
 
@@ -187,7 +187,7 @@ class Migration(SchemaMigration):
             'created_at': ('django.db.models.fields.DateTimeField', [], {'auto_now_add': 'True', 'null': 'True', 'blank': 'True'}),
             'environment': ('django.db.models.fields.related.ForeignKey', [], {'related_name': "'groups'", 'to': u"orm['stretch.Environment']"}),
             u'id': ('django.db.models.fields.AutoField', [], {'primary_key': 'True'}),
-            'load_balancer': ('django.db.models.fields.related.OneToOneField', [], {'to': u"orm['stretch.LoadBalancer']", 'unique': 'True', 'null': 'True'}),
+            'load_balancer': ('django.db.models.fields.related.OneToOneField', [], {'related_name': "'group'", 'unique': 'True', 'null': 'True', 'to': u"orm['stretch.LoadBalancer']"}),
             'maximum_nodes': ('django.db.models.fields.IntegerField', [], {'null': 'True'}),
             'minimum_nodes': ('django.db.models.fields.IntegerField', [], {'default': '1'}),
             'name': ('django.db.models.fields.TextField', [], {}),
