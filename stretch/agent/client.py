@@ -9,7 +9,7 @@ import gevent
 class AgentClient(object):
     def __init__(self, host):
         self.host = host
-        self.cert = settings.STRETCH_CERTS['agent']
+        self.cert = settings.STRETCH_AGENT_CERT
         self.base_url = 'https://%s:%s' % (host.address,
                                            settings.STRETCH_AGENT_PORT)
 

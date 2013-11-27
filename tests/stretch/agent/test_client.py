@@ -16,7 +16,7 @@ class TestClient(TestCase):
         self.run_task = patcher.start()
         self.addCleanup(patcher.stop)
 
-        patcher = patch_settings('STRETCH_CERTS', {'agent': '/cert.pem'})
+        patcher = patch_settings('STRETCH_AGENT_CERT', '/cert.pem')
         patcher.start()
         self.addCleanup(patcher.stop)
 
