@@ -3,37 +3,28 @@ import salt.wheel
 import salt.runner
 from django.conf import settings
 
-
-clients = {}
+from stretch.utils import memoized
 
 
 def master_config():
-    return salt.config.master_config(settings.SALT_CONF_PATH)
+    return salt.config.master_config(settings.STRETCH_SALT_CONF_PATH)
 
 
+@memoized
 def salt_client():
-    client = clients.get('salt')
-    if not client:
-        client = clients['salt'] = salt.client.LocalClient()
-    return client
+    return salt.client.LocalClient()
 
 
+@memoized
 def wheel_client():
-    client = clients.get('wheel')
-    if not client:
-        client = clients['wheel'] = salt.wheel.Wheel(master_config())
-    return client
+    return salt.wheel.Wheel(master_config())
 
 
+@memoized
 def runner_client():
-    client = clients.get('runner')
-    if not client:
-        client = clients['runner'] = salt.runner.RunnerClient(master_config())
-    return client
+    return salt.runner.RunnerClient(master_config())
 
 
+@memoized
 def caller_client():
-    client = clients.get('caller')
-    if not client:
-        client = clients['caller'] = salt.client.Caller()
-    return client
+    return salt.client.Caller()

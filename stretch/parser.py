@@ -6,7 +6,6 @@ import collections
 import gnupg
 import docker
 import logging
-from django.conf import settings
 from StringIO import StringIO
 from contextlib import contextmanager
 
@@ -281,6 +280,8 @@ class Container(object):
                 log.info('Pushing %s to registry' % self.tag)
                 # TODO: use api for push
                 log.debug(utils.check_output(['docker', 'push', self.tag]))
+                cert = settings.STRETCH_REGISTRY.cert
+                # TODO: push with cert if available
                 # log.debug(docker_client.push(self.tag))
                 # TODO: .dockercfg in docs, docker login
 

@@ -400,9 +400,9 @@ class Node(AuditedModel):
         if local:
             prefix = 'stretch_agent'
         elif private:
-            prefix = settings.STRETCH_REGISTRY_PRIVATE_URL
+            prefix = settings.STRETCH_REGISTRY.get_address('private')
         else:
-            prefix = settings.STRETCH_REGISTRY_PUBLIC_URL
+            prefix = settings.STRETCH_REGISTRY.get_address()
         return '%s/sys%s/%s' % (prefix, self.system.pk, self.name)
 
     # TODO: Clean up deleted nodes here and when a host is deleted. An unmanaged

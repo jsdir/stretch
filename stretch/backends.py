@@ -184,14 +184,23 @@ class RackspaceBackend(Backend):
 
         log.info('Configuring host %s...' % host.fqdn)
 
-        upload_template('host-bootstrap.sh', '/root/host-bootstrap.sh', {
+        options = {
             'hostname': host.hostname,
             'domain_name': host.domain_name,
             'use_public_network': self.use_public_network,
-            'etcd_host_address': settings.ETCD_HOST.split(':')[0],
-            'etcd_host_port': settings.ETCD_HOST.split(':')[1],
-            'master': settings.SALT_MASTER
-        }, use_jinja=True, template_dir=script_dir)
+            'master': settings.STRETCH_SALT_MASTER.get_address('private')
+        }
+
+        if self.use_public_network:
+            address = settings.STRETCH_ETCD_HOST.get_address()
+        else:
+            address = settings.STRETCH_ETCD_HOST.get_address('private')
+
+        parts = address.split(':')
+        options['etcd_host_address'], options['etcd_host_port'] = parts
+
+        upload_template('host-bootstrap.sh', '/root/host-bootstrap.sh',
+                        options, use_jinja=True, template_dir=script_dir)
         run('/bin/bash /root/host-bootstrap.sh')
 
     def delete_host(self, host):

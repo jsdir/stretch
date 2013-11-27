@@ -1,3 +1,15 @@
+class UrlLocation(object):
+    def __init__(self, default, **kwargs):
+        self.cert = kwargs.pop('cert', None)
+        self.addresses = {'default': default}
+        self.addresses.update(kwargs)
+
+    def get_address(tag='default'):
+        try:
+            return self.hosts[tag]
+        except KeyError:
+            raise KeyError('no addresses exist with tag "%s"' % tag)
+
 import os
 import sys
 # Django settings for stretch project.
@@ -221,19 +233,29 @@ STRETCH_TEMP_DIR = '/tmp/stretch'
 STRETCH_DATA_DIR = '/var/lib/stretch'
 STRETCH_CACHE_DIR = '/var/cache/stretch'
 STRETCH_BACKEND_IMAGE_PREFIX = 'stretch-host-image'
-SALT_CONF_PATH = '/etc/salt'
+STRETCH_SALT_CONF_PATH = '/etc/salt'
 STRETCH_BATCH_SIZE = 5
 
-STRETCH_REGISTRY_URL = 'registry.example.net:5000'
-STRETCH_REGISTRY_CLIENT_CERT = '/etc/stretch/pki/registry.pem'
-# .pem (.crt, .key)
-# Distribute STRETCH_REGISTRY_CLIENT_CERT to all agents
-STRETCH_CLIENT_CERT = None
-STRETCH_CERTS = {
-    'agent': '/path/to/agent.pem'
-}
-
+## Agent #
 STRETCH_AGENT_PORT = 24225
+STRETCH_AGENT_CERT = '/path/to/agent.pem'
+
+## Registry #
+STRETCH_REGISTRY = UrlLocation('reg.example.net:5000',
+                               private='10.182.129.142:5000',
+                               cert='registry.pem')
+# /etc/stretch/pki
+
+## Etcd Configuration #
+STRETCH_ETCD = UrlLocation('localhost:4001', private='50.162.89.57:4001',
+                           cert='registry.pem')
+
+
+STRETCH_SALT_MASTER = UrlLocation('50.162.89.57', private='50.162.89.57')
+
+
+
+# https://github.com/jezdez/django-configurations
 
 
 try:

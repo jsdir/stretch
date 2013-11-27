@@ -20,7 +20,6 @@ class TestClient(TestCase):
         patcher.start()
         self.addCleanup(patcher.stop)
 
-        self.requests
         self.host = mock_attr(address='127.0.0.1')
         self.host.environment = mock_attr(name='env', pk=2)
         self.host.environment.app_paths = {'node': '/path'}
@@ -91,7 +90,7 @@ class TestClient(TestCase):
                 'config_key': '/key',
                 'id': '1',
                 'host_name': 'host_name'
-        }, cert='/cert.pem')
+            }, cert='/cert.pem')
 
     def test_remove_instance(self):
         instance = mock_attr(pk=1)

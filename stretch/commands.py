@@ -36,8 +36,6 @@ def run(args=sys.argv[1:]):
     # Parse arguments
     args = parser.parse_args(args)
 
-    workers = multiprocessing.cpu_count() * 2 + 1
-
     if args.command == 'agent':
         run_gunicorn('stretch.agent.api:app')
     elif args.command == 'lb':

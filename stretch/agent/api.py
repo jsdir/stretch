@@ -1,3 +1,5 @@
+from flask.ext.restful import reqparse
+
 from stretch.agent.app import app
 from stretch.agent import objects, resources
 
@@ -6,6 +8,10 @@ from stretch.agent import objects, resources
 @app.route('/')
 def index():
     return 'stretch-agent'
+
+
+class InstanceResource(resources.ObjectResource):
+    obj_class = objects.Instance
 
 
 class InstanceListResource(resources.ObjectListResource):
@@ -19,10 +25,18 @@ class InstanceListResource(resources.ObjectListResource):
         super(InstanceListResource, self).post(parser)
 
 
-class InstanceResource(resources.ObjectResource):
-    obj_class = objects.Instance
+class NodeResource(resources.ObjectResource):
+    obj_class = objects.Node
 
 
+class NodeListResource(resources.ObjectListResource):
+    obj_class = objects.Node
+
+
+resources.add_api_resource('instances', InstanceResource, InstanceListResource)
+resources.add_api_resource('nodes', NodeResource, NodeListResource)
+
+"""
 def restart_instance(instance, args):
     instance.restart()
 
@@ -31,7 +45,6 @@ def reload_instance(instance, args):
     instance.reload()
 
 
-"""
 resources.add_api_resource('instances', InstanceResource, InstanceListResource)
 resources.add_task_resource('instances', Instance, {
     'restart': {'task': restart_instance},
@@ -94,14 +107,6 @@ def get_task_resources(obj, tasks):
     return TaskResource, TaskListResource
 
 
-class NodeResource(resources.ObjectResource):
-    obj_class = objects.Node
-
-
-class NodeListResource(resources.ObjectListResource):
-    obj_class = objects.Node
-
-
 def configure_parser(parser):
     parser.add_argument('sha', type=str)
     parser.add_argument('app_path', type=str)
@@ -122,6 +127,8 @@ def pull(node, args):
     node.pull(args)
 
 
+# Implement long running tasks; decided
+
 """
 resources.add_api_resource('nodes', NodeResource, NodeListResource)
 resources.add_task_resource('nodes', Node, {
@@ -132,5 +139,3 @@ resources.add_task_resource('nodes', Node, {
     }
 })
 """
-
-# use tests from test_agent.py
