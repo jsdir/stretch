@@ -1,17 +1,7 @@
-class UrlLocation(object):
-    def __init__(self, default, **kwargs):
-        self.cert = kwargs.pop('cert', None)
-        self.addresses = {'default': default}
-        self.addresses.update(kwargs)
-
-    def get_address(tag='default'):
-        try:
-            return self.hosts[tag]
-        except KeyError:
-            raise KeyError('no addresses exist with tag "%s"' % tag)
-
 import os
 import sys
+
+from stretch.utils import UrlLocation
 # Django settings for stretch project.
 
 DEBUG = True

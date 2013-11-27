@@ -192,9 +192,9 @@ class RackspaceBackend(Backend):
         }
 
         if self.use_public_network:
-            address = settings.STRETCH_ETCD_HOST.get_address()
+            address = settings.STRETCH_ETCD.get_address()
         else:
-            address = settings.STRETCH_ETCD_HOST.get_address('private')
+            address = settings.STRETCH_ETCD.get_address('private')
 
         parts = address.split(':')
         options['etcd_host_address'], options['etcd_host_port'] = parts

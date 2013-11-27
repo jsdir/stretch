@@ -32,6 +32,19 @@ class memoized(object):
         return self.cache[key]
 
 
+class UrlLocation(object):
+    def __init__(self, default, **kwargs):
+        self.cert = kwargs.pop('cert', None)
+        self.addresses = {'default': default}
+        self.addresses.update(kwargs)
+
+    def get_address(self, tag='default'):
+        try:
+            return self.addresses[tag]
+        except KeyError:
+            raise KeyError('no addresses exist with tag "%s"' % tag)
+
+
 def get_class(class_path):
     parts = class_path.split('.')
     module, class_name = '.'.join(parts[:-1]), parts[-1]
