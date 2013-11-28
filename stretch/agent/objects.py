@@ -168,6 +168,46 @@ class Instance(resources.PersistentObject):
         return self.data['cid'] != None
 
 
+class Node(resources.PersistentObject):
+    name = 'node'
+    attrs = {
+        'env_id': None,
+        'env_name': None,
+        'app_path': None,
+        'sha': None,
+        'ports': {},
+        'image': None
+    }
+
+    def pull(self, args):
+        # Pull image
+        if not args['app_path']:
+            utils.run_cmd(['docker', 'pull', args['image']])
+
+        # Prepare to pull templates
+        templates_path = self.get_templates_path()
+        src = 'salt://templates/%s/%s' % (args['env_id'], self.data['_id'])
+
+        # Remove all contents before adding new templates
+        utils.clear_path(templates_path)
+
+        # Pull templates
+        caller_client().function('cp.get_dir', src, templates_path)
+
+        node.update(args)
+
+    def get_templates_path(self):
+        return os.path.join(agent_dir, 'templates', 'nodes', self.data['_id'])
+
+    def delete(self):
+        # TODO: delete all docker images
+        super(Node, self).delete()
+
+    @property
+    def pulled(self):
+        return (self.data['sha'] != None) or (self.data['app_path'] != None)
+
+
 class LoadBalancer(resources.PersistentObject):
     name = 'loadbalancer'
 
@@ -193,44 +233,6 @@ class LoadBalancer(resources.PersistentObject):
         [lb.start() for lb in cls.all_objects()]
 
 
-class Node(resources.PersistentObject):
-    name = 'node'
-    attrs = {
-        'env_id': None,
-        'env_name': None,
-        'app_path': None,
-        'sha': None,
-        'ports': {},
-        'image': None
-    }
-
-    def pull(self, args):
-        # TODO: accept an id argument and automatically create node if that is
-        # supplied with the pull request.
-        # Pull image
-        if not args['app_path']:
-            utils.run_cmd(['docker', 'pull', args['image']])
-        # Pull templates
-        templates_path = self.get_templates_path()
-        src = 'salt://templates/%s/%s' % (args['env_id'], self.data['_id'])
-        caller_client().function('cp.get_dir', src, templates_path)
-        # Remove all contents before adding new templates
-        utils.clear_path(templates_path)
-        node.update(args)
-
-    def get_templates_path(self):
-        return os.path.join(agent_dir, 'templates', 'nodes', self.data['_id'])
-
-    def delete(self):
-        # TODO: delete all docker images
-        super(Node, self).delete()
-
-    @property
-    def pulled(self):
-        return self.data['sha'] or self.data['app_path']
-
-
-""" TODO: Use tasks instead of blocking HTTP requests
 class Task(resources.PersistentObject):
     name = 'task'
     attrs = {
@@ -256,4 +258,3 @@ class Task(resources.PersistentObject):
         else:
             self.update({'status': 'FINISHED'})
         self.update({'ended_at': datetime.utcnow()})
-"""

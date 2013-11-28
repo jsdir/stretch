@@ -11,7 +11,7 @@ from twisted.protocols.portforward import ProxyFactory
 from treq import get, post
 
 from stretch import utils, models
-#from stretch.agent.instances import Instance
+from stretch.agent import objects
 
 
 LB_SUPERVISOR_PORT = 24226
@@ -95,7 +95,7 @@ class ObjectExists(LoadBalancerException):
 def run_lb_supervisor():
     # Set new persistent endpoints
     lb_server = TCPLoadBalancerServer()
-    for lb in LoadBalancer.all():
+    for lb in models.LoadBalancer.all():
         host, port = '127.0.0.1', lb_server.xmlrpc_start_lb(lb.pk)
         # TODO: set lb endpoint in etcd
     reactor.listenTCP(LB_SUPERVISOR_PORT, server.Site(lb_server))
@@ -105,11 +105,6 @@ def run_lb_supervisor():
 @utils.memoized
 def lb_supervisor_client():
     return xmlrpclib.ServerProxy('http://127.0.0.1:%s/' % LB_SUPERVISOR_PORT)
-
-
-# If the instance's node hasn't been pushed to its host or if
-# the environment has no release set, the instance should wait, make this a
-# lot more readable
 
 
 class EndpointSupervisor(xmlrpc.XMLRPC):
@@ -185,6 +180,7 @@ def run_endpoint_supervisor():
     # create/remove hooks,
     """
     # Load all groups that use a load balancer
+    # TODO: that uses a Docker backend
     groups = [lb.group for lb in models.LoadBalancer.objects.all()]
     reactor.listenTCP(ENDPOINT_SUPERVISOR_PORT,
                       server.Site(EndpointSupervisor(groups)))
@@ -199,7 +195,7 @@ def endpoint_supervisor_client():
 
 def check_instances():
     cids = utils.run_cmd(['docker', 'ps', '-q'])[0].splitlines()
-    for instance in Instance.get_instances():
+    for instance in objects.Instance.get_instances():
         cid = instance.data['cid']
         if cid in cids:
             # Instance is running

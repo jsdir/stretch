@@ -11,7 +11,19 @@ def patch_func(func):
                  % func, Mock(return_value=None))
 
 
-class TestInstance(TestCase):
+class TestTask(TestCase):
+    def setUp(self):
+        self.task = objects.Task()
+
+
+class ObjectTestCase(TestCase):
+    def apply_patch(self, patch):
+        obj = patch.start()
+        self.addCleanup(patch.stop)
+        return obj
+
+
+class TestInstance(ObjectTestCase):
     def setUp(self):
         self.config = self.apply_patch(patch(
             'stretch.config_managers.EtcdConfigManager'))
@@ -20,11 +32,6 @@ class TestInstance(TestCase):
         self.apply_patch(patch('stretch.agent.objects.container_dir', '/var'))
 
         self.instance = objects.Instance('1')
-
-    def apply_patch(self, patch):
-        obj = patch.start()
-        self.addCleanup(patch.stop)
-        return obj
 
     @patch_func('create')
     @patch.object(objects.Instance, 'start')
@@ -141,6 +148,33 @@ class TestInstance(TestCase):
         assert not self.instance.running
         self.instance.data['cid'] = 'cid'
         assert self.instance.running
+
+
+class TestLoadBalancer(TestCase):
+    def setUp(self):
+        pass
+
+
+class TestNode(ObjectTestCase):
+    def setUp(self):
+        self.apply_patch(patch_func('__init__'))
+        self.node = objects.Node('1')
+
+    def test_pull(self):
+        pass
+
+    def test_get_templates_path(self):
+        pass
+
+    def test_pulled(self):
+        with patch.dict(self.node.data, {'sha': 'sha', 'app_path': 'path'}):
+            self.assertEquals(self.node.pulled, True)
+        with patch.dict(self.node.data, {'sha': 'sha', 'app_path': None}):
+            self.assertEquals(self.node.pulled, True)
+        with patch.dict(self.node.data, {'sha': None, 'app_path': 'path'}):
+            self.assertEquals(self.node.pulled, True)
+        with patch.dict(self.node.data, {'sha': None, 'app_path': None}):
+            self.assertEquals(self.node.pulled, False)
 
 """
 import mongomock

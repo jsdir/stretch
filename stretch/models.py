@@ -559,6 +559,7 @@ class LoadBalancer(models.Model):
                  options=options)
         lb.group = group
         host, port = lb.backend.create_lb(lb)
+
         # Add key to config
         lb.group.environment.system.config_manager.set(lb.config_key,
             json.dumps({'host': host, 'port': port}))

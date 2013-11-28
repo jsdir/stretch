@@ -1,4 +1,5 @@
 from mock import Mock, patch
+from nose.tools import assert_raises
 from unittest import TestCase
 
 from stretch.testutils import mock_attr, patch_settings
@@ -10,10 +11,6 @@ class TestClient(TestCase):
     def setUp(self):
         patcher = patch('stretch.agent.client.requests')
         self.requests = patcher.start()
-        self.addCleanup(patcher.stop)
-
-        patcher = patch('stretch.agent.client.AgentClient.run_task')
-        self.run_task = patcher.start()
         self.addCleanup(patcher.stop)
 
         patcher = patch_settings('STRETCH_AGENT_CERT', '/cert.pem')
@@ -38,7 +35,8 @@ class TestClient(TestCase):
         self.requests.delete.assert_called_with(
             'https://127.0.0.1:1337/v1/nodes/1', cert='/cert.pem')
 
-    def test_pull_with_release(self):
+    @patch('stretch.agent.client.AgentClient.run_task')
+    def test_pull_with_release(self, run_task):
         node = mock_attr(name='node', pk=1)
         node.get_image.return_value = 'image'
         node.ports.all.return_value = [
@@ -49,7 +47,7 @@ class TestClient(TestCase):
         release.sha = 'sha'
 
         self.client.pull(node, release)
-        self.run_task.assert_called_with('nodes/1', 'pull', {
+        run_task.assert_called_with('nodes/1', 'pull', {
             'sha': 'sha',
             'app_path': None,
             'ports': '{"http": 80, "https": 443}',
@@ -59,7 +57,8 @@ class TestClient(TestCase):
         })
         node.get_image.assert_called_with(local=False, private=True)
 
-    def test_pull(self):
+    @patch('stretch.agent.client.AgentClient.run_task')
+    def test_pull(self, run_task):
         node = mock_attr(name='node', pk=1)
         node.get_image.return_value = 'image'
         node.ports.all.return_value = [
@@ -68,7 +67,7 @@ class TestClient(TestCase):
         ]
 
         self.client.pull(node)
-        self.run_task.assert_called_with('nodes/1', 'pull', {
+        run_task.assert_called_with('nodes/1', 'pull', {
             'sha': None,
             'app_path': '/path',
             'ports': '{"http": 80, "https": 443}',
@@ -98,12 +97,57 @@ class TestClient(TestCase):
         self.requests.delete.assert_called_with(
             'https://127.0.0.1:1337/v1/instances/1', cert='/cert.pem')
 
-    def test_reload_instance(self):
+    @patch('stretch.agent.client.AgentClient.run_task')
+    def test_reload_instance(self, run_task):
         instance = mock_attr(pk=1)
         self.client.reload_instance(instance)
-        self.run_task.assert_called_with('instances/1', 'reload')
+        run_task.assert_called_with('instances/1', 'reload')
 
-    def test_restart_instance(self):
+    @patch('stretch.agent.client.AgentClient.run_task')
+    def test_restart_instance(self, run_task):
         instance = mock_attr(pk=1)
         self.client.restart_instance(instance)
-        self.run_task.assert_called_with('instances/1', 'restart')
+        run_task.assert_called_with('instances/1', 'restart')
+
+    @patch('gevent.sleep')
+    @patch('stretch.agent.client.AgentClient.task_running')
+    def test_run_task(self, task_running, sleep):
+
+        class TestException(Exception):
+            pass
+
+        sleep.side_effect = TestException()
+        response = Mock()
+        response.json.return_value = {'id': '2'}
+        self.requests.post.return_value = response
+
+        with assert_raises(TestException):
+            self.client.run_task('a/1', 'reload', {'k': 'v'})
+
+        self.requests.post.assert_called_with(
+            'https://127.0.0.1:1337/v1/a/1/tasks',
+            data={'k': 'v'},
+            cert='/cert.pem'
+        )
+        task_running.assert_called_with('https://127.0.0.1:1337/v1/tasks/2')
+
+    def test_task_running(self):
+        response = Mock()
+        response.json.return_value = {'status': 'FINISHED'}
+        self.requests.get.return_value = response
+        result = self.client.task_running('https://s/v1/tasks/2')
+        self.requests.get.assert_called_with('https://s/v1/tasks/2',
+                                             cert='/cert.pem')
+        self.assertEquals(result, False)
+
+        response = Mock()
+        response.json.return_value = {'status': 'RUNNING'}
+        self.requests.get.return_value = response
+        result = self.client.task_running('https://s/v1/tasks/2')
+        self.assertEquals(result, True)
+
+        response = Mock()
+        response.json.return_value = {'status': 'FAILED'}
+        self.requests.get.return_value = response
+        with assert_raises(Exception):
+            self.client.task_running('https://s/v1/tasks/2')

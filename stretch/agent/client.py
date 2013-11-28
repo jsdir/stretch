@@ -61,16 +61,21 @@ class AgentClient(object):
         task = self.run_task('instances/%s' % str(instance.pk), 'restart')
 
     def run_task(self, resource, task_name, options={}):
-        url = self.get_url(urljoin(resource, 'tasks'))
+        url = self.get_url('/'.join([resource, 'tasks']))
         task_id = requests.post(url, data=options, cert=self.cert).json()['id']
+        task_url = self.get_url('/'.join(['tasks', task_id]))
 
-        while True:
+        while self.task_running(task_url):
             gevent.sleep(1.0)
-            task = requests.get(urljoin(url, task_id), cert=self.cert).json()
-            if task['status'] == 'FAILED':
-                raise Exception(task['error'])
-            elif task['status'] == 'FINISHED':
-                break
+
+    def task_running(self, task_url):
+        task = requests.get(task_url, cert=self.cert).json()
+        if task['status'] == 'FAILED':
+            raise Exception(task['error'])
+        elif task['status'] == 'FINISHED':
+            return False
+        else:
+            return True
 
     def get_url(self, resource):
         return urljoin(self.base_url, 'v1/' + resource)
