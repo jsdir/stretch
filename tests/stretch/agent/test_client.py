@@ -126,7 +126,7 @@ class TestClient(TestCase):
 
         self.requests.post.assert_called_with(
             'https://127.0.0.1:1337/v1/a/1/tasks',
-            data={'k': 'v'},
+            data={'k': 'v', 'task': 'reload'},
             cert='/cert.pem'
         )
         task_running.assert_called_with('https://127.0.0.1:1337/v1/tasks/2')

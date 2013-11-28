@@ -85,6 +85,7 @@ class AgentTestCase(TestCase):
 
     def create_app(self):
         app.app.config['TESTING'] = True
+        app.app.config['DEBUG'] = True
         return app.app
 
 

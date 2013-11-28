@@ -14,14 +14,15 @@ class Instance(resources.PersistentObject):
 
     @classmethod
     def create(cls, args):
-        super(Instance, cls).create(args)
+        instance = super(Instance, cls).create(args)
         # TODO: have start/stop behave as individual tasks, use HTTP request
         # Attempt to start,
         try:
             # Attempt to start, but don't fail if the node isn't ready
-            cls.start()
+            instance.start()
         except TaskException:
             pass
+        return instance
 
     def delete(self):
         if self.running:
@@ -241,13 +242,6 @@ class Task(resources.PersistentObject):
         'started_at': None,
         'ended_at': None
     }
-
-    @classmethod
-    def get_object_tasks(cls, object_id, object_type):
-        return {'results': list(cls.get_collection().find({
-            'object_id': object_id,
-            'object_type': object_type
-        }))}
 
     def run(self, func, args, obj):
         self.update({'status': 'RUNNING', 'started_at': datetime.utcnow()})

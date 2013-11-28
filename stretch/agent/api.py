@@ -1,4 +1,7 @@
-from flask.ext.restful import reqparse
+import json
+import uuid
+from threading import Thread
+from flask.ext.restful import reqparse, Resource
 
 from stretch.agent.app import app
 from stretch.agent import objects, resources
@@ -33,37 +36,16 @@ class NodeListResource(resources.ObjectListResource):
     obj_class = objects.Node
 
 
-resources.add_api_resource('instances', InstanceResource, InstanceListResource)
-resources.add_api_resource('nodes', NodeResource, NodeListResource)
-
-"""
-def restart_instance(instance, args):
-    instance.restart()
+class TaskListResource(Resource):
+    def get(self, _id):
+        return objects.Task(str(_id)).data
 
 
-def reload_instance(instance, args):
-    instance.reload()
+def get_task_list(obj, tasks):
 
-
-resources.add_api_resource('instances', InstanceResource, InstanceListResource)
-resources.add_task_resource('instances', Instance, {
-    'restart': {'task': restart_instance},
-    'reload': {'task': reload_instance},
-})
-"""
-
-
-# TODO: Lock group tasks across processes; use celery or db
-def get_task_resources(obj, tasks):
-
-    class TaskListResource(Resource):
-        obj_class = objects.Task
-
-        def get(self, object_id):
-            return self.obj_class.get_object_tasks(object_id, obj.name)
-
+    class ObjectTaskListResource(Resource):
         def post(self, object_id):
-            names = tasks.values()
+            names = tasks.keys()
             parser = reqparse.RequestParser()
             parser.add_argument('task', type=str, required=True, choices=names)
             args = parser.parse_args()
@@ -85,7 +67,7 @@ def get_task_resources(obj, tasks):
             if not task_func:
                 raise TaskException('no task defined')
 
-            task = Task.create({
+            task = objects.Task.create({
                 'id': str(uuid.uuid4()),
                 'object_id': object_id,
                 'object_name': obj.name
@@ -95,16 +77,15 @@ def get_task_resources(obj, tasks):
                                    obj(object_id))).start()
             return task.data, 201
 
-    class TaskResource(ObjectResource):
-        obj_class = objects.Task
+    return ObjectTaskListResource
 
-        def get(self, object_id, task_id):
-            super(TaskResource, self).get(task_id)
 
-        def delete(self, object_id, task_id):
-            super(TaskResource, self).delete(task_id)
+def restart_instance(instance, args):
+    instance.restart()
 
-    return TaskResource, TaskListResource
+
+def reload_instance(instance, args):
+    instance.reload()
 
 
 def configure_parser(parser):
@@ -118,7 +99,7 @@ def configure_parser(parser):
 
 def verify_args(args):
     args['ports'] = json.loads(args['ports'])
-    if not args['sha'] and not args['sha']:
+    if not args['sha'] and not args['app_path']:
         raise Exception('neither `sha` nor `app_path` was specified')
 
 
@@ -127,15 +108,19 @@ def pull(node, args):
     node.pull(args)
 
 
-# Implement long running tasks; decided
-
-"""
+resources.add_api_resource('instances', InstanceResource, InstanceListResource)
 resources.add_api_resource('nodes', NodeResource, NodeListResource)
-resources.add_task_resource('nodes', Node, {
+resources.add_task_resource('instances', get_task_list(objects.Node, {
+    'restart': {'task': restart_instance},
+    'reload': {'task': reload_instance}
+}))
+resources.add_task_resource('nodes', get_task_list(objects.Instance, {
     'pull': {
         'parser_config': configure_parser,
         'verify_args': verify_args,
         'task': pull
     }
-})
-"""
+}))
+resources.add_tasks_resource(TaskListResource)
+
+# TODO: Lock group tasks across processes; use celery or db

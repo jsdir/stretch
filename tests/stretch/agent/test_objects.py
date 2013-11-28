@@ -33,11 +33,11 @@ class TestInstance(ObjectTestCase):
 
         self.instance = objects.Instance('1')
 
-    @patch_func('create')
-    @patch.object(objects.Instance, 'start')
-    def test_should_start_when_created(self, start):
+    @patch('stretch.agent.objects.resources.PersistentObject.create')
+    def test_should_start_when_created(self, create):
+        create.return_value = instance = Mock()
         instance = objects.Instance.create({})
-        start.assert_called_with()
+        instance.start.assert_called_with()
 
     @patch_func('delete')
     @patch.object(objects.Instance, 'stop')

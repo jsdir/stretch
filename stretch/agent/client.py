@@ -60,7 +60,8 @@ class AgentClient(object):
     def restart_instance(self, instance):
         task = self.run_task('instances/%s' % str(instance.pk), 'restart')
 
-    def run_task(self, resource, task_name, options={}):
+    def run_task(self, resource, task, options={}):
+        options['task'] = task
         url = self.get_url('/'.join([resource, 'tasks']))
         task_id = requests.post(url, data=options, cert=self.cert).json()['id']
         task_url = self.get_url('/'.join(['tasks', task_id]))

@@ -87,18 +87,21 @@ class ObjectListResource(Resource):
         return obj.data, 201
 
 
+def get_prefix(plural_name):
+    return '/v1/%s' % plural_name
+
+
 def add_api_resource(plural_name, resource, list_resource):
-    prefix = '/v1/%s' % plural_name
+    prefix = get_prefix(plural_name)
     api.add_resource(list_resource, prefix)
     api.add_resource(resource, '%s/<string:_id>' % prefix)
 
 
-'''
-def add_task_resource(plural_name, obj, tasks):
-    pass
-    """
-    resource, resource_list = tasks.get_task_resources(obj, tasks)
-    prefix = '/v1/%s' % plural_name
-    api.add_resource(resource_list, '%s/<string:_id>/tasks' % prefix)
-    api.add_resource(resource,
-                     '%s/<string:_id>/tasks/<string:task_id>' % prefix)"""'''
+def add_tasks_resource(resource):
+    api.add_resource(resource, get_prefix('tasks'))
+
+
+def add_task_resource(plural_name, resource):
+    prefix = get_prefix(plural_name)
+    api.add_resource(resource, '%s/<string:object_id>/tasks' % prefix,
+                     endpoint=plural_name)
