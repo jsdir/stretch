@@ -10,7 +10,7 @@ from twisted.internet.protocol import Factory
 from twisted.protocols.portforward import ProxyFactory
 from treq import get, post
 
-from stretch import utils, models
+from stretch import utils#, models
 from stretch.agent import objects
 
 

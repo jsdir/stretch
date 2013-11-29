@@ -72,9 +72,8 @@ def get_task_list(obj, tasks):
                 'object_id': object_id,
                 'object_name': obj.name
             })
-
             Thread(target=task.run(task_func, task_args,
-                                   obj(object_id))).start()
+                                   obj(int(object_id)))).start()
             return task.data, 201
 
     return ObjectTaskListResource
@@ -104,17 +103,18 @@ def verify_args(args):
 
 
 def pull(node, args):
+    raise Exception(args)
     args['ports'] = json.loads(args['ports'])
     node.pull(args)
 
 
 resources.add_api_resource('instances', InstanceResource, InstanceListResource)
 resources.add_api_resource('nodes', NodeResource, NodeListResource)
-resources.add_task_resource('instances', get_task_list(objects.Node, {
+resources.add_task_resource('instances', get_task_list(objects.Instance, {
     'restart': {'task': restart_instance},
     'reload': {'task': reload_instance}
 }))
-resources.add_task_resource('nodes', get_task_list(objects.Instance, {
+resources.add_task_resource('nodes', get_task_list(objects.Node, {
     'pull': {
         'parser_config': configure_parser,
         'verify_args': verify_args,

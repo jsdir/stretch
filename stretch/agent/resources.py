@@ -11,6 +11,7 @@ class PersistentObject(object):
     data = {}
 
     def __init__(self, _id):
+        _id = str(_id)
         data = self.get_collection().find_one({'_id': _id})
         if not data:
             self.abort_nonexistent()

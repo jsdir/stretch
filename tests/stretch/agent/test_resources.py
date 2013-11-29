@@ -23,11 +23,11 @@ class TestPersistentObject(testutils.AgentTestCase):
 
         obj = self.obj_class.create({'id': 1, 'key': 'value', 'foo': 'foo'})
 
-        data = {'id': 1, 'key': 'value', 'foo': 'bar'}
+        data = {'id': '1', 'key': 'value', 'foo': 'bar'}
         self.assertEquals(obj.data, data)
         self.assertEquals(self.obj_class(1).data, data)
 
-        self.obj_class.create({'id': 1, 'key': 'value', 'foo': 'foo'})
+        self.obj_class.create({'id': '1', 'key': 'value', 'foo': 'foo'})
         self.obj_class.abort_exists.assert_called_with()
 
         self.obj_class(2)
@@ -42,32 +42,32 @@ class TestPersistentObject(testutils.AgentTestCase):
         abort.assert_called_with(409, message='Object already exists')
 
     def test_all(self):
-        self.obj_class.create({'id': 3, 'bar': 'foo'})
-        self.obj_class.create({'id': 4, 'bar': 'foo'})
+        self.obj_class.create({'id': '3', 'bar': 'foo'})
+        self.obj_class.create({'id': '4', 'bar': 'foo'})
         self.assertEquals(self.obj_class.all(), {'results': [
-            {'id': 3, 'bar': 'foo'}, {'id': 4, 'bar': 'foo'}
+            {'id': '3', 'bar': 'foo'}, {'id': '4', 'bar': 'foo'}
         ]})
 
     def test_all_objects(self):
         objs = [
-            self.obj_class.create({'id': 1, 'bar': 'foo'}),
-            self.obj_class.create({'id': 2, 'bar': 'foo'})
+            self.obj_class.create({'id': '1', 'bar': 'foo'}),
+            self.obj_class.create({'id': '2', 'bar': 'foo'})
         ]
         all_objs = list(self.obj_class.all_objects())
-        self.assertEquals(all_objs[0].data, {'id': 1, 'bar': 'foo'})
-        self.assertEquals(all_objs[1].data, {'id': 2, 'bar': 'foo'})
+        self.assertEquals(all_objs[0].data, {'id': '1', 'bar': 'foo'})
+        self.assertEquals(all_objs[1].data, {'id': '2', 'bar': 'foo'})
 
     def test_save(self):
-        self.obj = self.obj_class.create({'id': 3, 'bar': 'foo'})
+        self.obj = self.obj_class.create({'id': '3', 'bar': 'foo'})
         self.obj.data['new'] = 'bar'
         self.obj.save()
-        obj = self.db.objects.find_one({'_id': 3})
+        obj = self.db.objects.find_one({'_id': '3'})
         self.assertEquals(obj.get('new'), 'bar')
 
     def test_delete(self):
-        self.obj = self.obj_class.create({'id': 3, 'bar': 'foo'})
+        self.obj = self.obj_class.create({'id': '3', 'bar': 'foo'})
         self.obj.delete()
-        self.assertEquals(self.db.objects.find_one({'_id': 3}), None)
+        self.assertEquals(self.db.objects.find_one({'_id': '3'}), None)
 
 
 class TestObjectResource(TestCase):
@@ -107,21 +107,6 @@ class TestObjectListResource(TestCase):
     def test_post(self):
         parser = Mock()
         parser.parse_args.return_value = {'key': 'value'}
-        self.obj.create.return_value = testutils.mock_attr(data={'data': 1})
-        self.assertEquals(self.list_resource.post(parser), ({'data': 1}, 201))
+        self.obj.create.return_value = testutils.mock_attr(data={'data': '1'})
+        self.assertEquals(self.list_resource.post(parser), ({'data': '1'}, 201))
         self.obj.create.assert_called_with({'key': 'value'})
-
-
-class TestResources(testutils.AgentTestCase):
-    def test_add_api_resource(self):
-        resource = resources.ObjectResource
-        resource.get = Mock()
-        list_resource = resources.ObjectListResource
-        list_resource.get = Mock()
-        resources.add_api_resource('objects', resource, list_resource)
-
-        self.client.get('/v1/objects')
-        list_resource.get.assert_called_with()
-
-        self.client.get('/v1/objects/1')
-        resource.get.assert_called_with(_id='1')

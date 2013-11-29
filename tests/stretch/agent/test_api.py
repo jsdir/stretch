@@ -2,7 +2,7 @@ from mock import Mock, patch
 from nose.tools import assert_in
 
 from stretch import testutils
-from stretch.agent import api
+from stretch.agent import api, objects
 
 
 class TestApi(testutils.AgentTestCase):
@@ -50,8 +50,9 @@ class TestApi(testutils.AgentTestCase):
         instance.delete.assert_called_with()
 
 
-    @patch('stretch.agent.objects.Node')
-    def test_pull(self, Node):
+    #@patch('stretch.agent.objects.Node')
+    def test_pull(self):
+        objects.Node.create({'id': '1'})
         r = self.client.post('/v1/nodes/1/tasks', data={
             'sha': None,
             'app_path': '/path',
@@ -64,7 +65,7 @@ class TestApi(testutils.AgentTestCase):
         raise Exception(r.data)
         #raise Exception(dir(self.create_app()))
 
-        Node.pull.assert_called_with()
+        #Node.pull.assert_called_with()
 
     '''
     def test_reload_instance(self):

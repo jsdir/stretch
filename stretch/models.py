@@ -22,6 +22,7 @@ from django.conf import settings
 from stretch import (signals, sources, utils, backends, parser, exceptions,
                      config_managers)
 
+from stretch.agent import supervisors
 from stretch.salt_api import salt_client, wheel_client
 from stretch.agent.client import AgentClient
 
@@ -81,7 +82,7 @@ class System(AuditedModel):
     def config_manager(self):
         """
         Returns a memoized configuration manager (client) to be used with the
-        system. Even though configuration mangers are structured to handle
+        system. Even though configuration managers are structured to handle
         multiple systems, they are bound to systems in case different systems
         need different or separate configuration managers in the future.
         """
@@ -438,20 +439,30 @@ class Instance(AuditedModel):
         """
         instance = cls(environment=env, host=host, node=node)
         instance.save()
+        instance.sync_node(node)
+        host.agent.add_instance(instance)
 
-        # Add the instance's node to the agent if it isn't there already.
-        if node not in host.nodes:
-            host.agent.add_node(node)
-            if env.current_release:
+        return instance
+
+    def sync_node(self, node):
+        """
+        Sync the instance's node to the agent. The node will be pulled if it
+        isn't there already.
+
+        :Parameters:
+          - `node`: the node to sync
+        """
+        if node not in self.host.nodes:
+            self.host.agent.add_node(node)
+            if self.environment.current_release:
                 # Use the environment's release
-                host.agent.pull(node, release=env.current_release)
-            elif env.using_source:
-                host.agent.pull(node)
+                self.host.agent.pull(node,
+                    release=self.environment.current_release)
+            elif self.environment.using_source:
+                self.host.agent.pull(node)
             else:
                 # Environment has not yet been deployed to
                 pass
-
-        host.agent.add_instance(instance)
 
     def reload(self):
         """
@@ -474,7 +485,7 @@ class Instance(AuditedModel):
         """
         Returns the instance's key in the configuration manager.
         """
-        return self.environment.system.config_manger.get_instance_key(self)
+        return self.environment.system.config_manager.get_instance_key(self)
 
     def restart(self):
         """
@@ -504,8 +515,8 @@ class Instance(AuditedModel):
             endpoints = supervisors.endpoint_supervisor_client()
             endpoints.block_instance(self.pk)
             # Manually remove the instance's endpoint from the load balancer
-            config_manager = self.environment.system.config_manger
-            endpoint = config_manager.get(self.config_key)
+            config_manager = self.environment.system.config_manager
+            endpoint = json.loads(config_manager.get(self.config_key))
             self.load_balancer.remove_endpoint(endpoint)
 
         # Run `func` now that instance state is mirrored to its load balancer
@@ -613,7 +624,7 @@ class LoadBalancer(models.Model):
         """
         Returns the load balancer's key in the configuration manager.
         """
-        return self.environment.system.config_manger.get_lb_key(self)
+        return self.environment.system.config_manager.get_lb_key(self)
 
     @classmethod
     def pre_delete(cls, sender, instance, **kwargs):
@@ -810,7 +821,7 @@ class Group(AuditedModel):
 
     @property
     def config_key(self):
-        return self.environment.system.config_manger.get_group_key(self)
+        return self.environment.system.config_manager.get_group_key(self)
 
     @property
     def batch_size(self):
