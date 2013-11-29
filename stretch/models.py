@@ -540,10 +540,13 @@ model_signals.pre_delete.connect(Instance.pre_delete, sender=Instance)
 
 class LoadBalancer(models.Model):
     """
-    Load balancers adhere to a `protocol` -- http and tcp for now.
+    Load balancers adhere to a `protocol` (http and tcp for now).
 
     For rackspace, the endpoint is set until the load balancer is deleted.
     For docker, the endpoint will change on each system startup.
+
+    port_name is the name of the instance port that should be used to propagate
+    to the lb backend.
     """
     id = uuidfield.UUIDField(primary_key=True)
     port_name = models.TextField(validators=[alphanumeric])
@@ -579,6 +582,8 @@ class LoadBalancer(models.Model):
         endpoints = supervisors.endpoint_supervisor_client()
         endpoints.add_group(lb.group.pk, lb.group.config_key)
         lb.save()
+
+        return lb
 
     def add_endpoint(self, endpoint):
         """
@@ -624,7 +629,7 @@ class LoadBalancer(models.Model):
         """
         Returns the load balancer's key in the configuration manager.
         """
-        return self.environment.system.config_manager.get_lb_key(self)
+        return self.group.environment.system.config_manager.get_lb_key(self)
 
     @classmethod
     def pre_delete(cls, sender, instance, **kwargs):
