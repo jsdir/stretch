@@ -27,7 +27,7 @@ class TestHost(TestCase):
             return mock_obj
         else:
             return patcher
-    """
+
     def create_lb(self):
         with self.patch_lb('backend') as backend:
             backend.create_lb.return_value = ('2.2.2.2', 443)
@@ -42,6 +42,33 @@ class TestHost(TestCase):
             lb.group.config_key)
         lb.save.assert_called_with()
 
+    def test_create_unmanaged(self):
+        pass
+
+    def test_pull_nodes(self):
+        pass
+
+    def test_create_instance(self):
+        pass
+
+    def test_sync(self):
+        pass
+
+    def test_finish_provisioning(self):
+        pass
+
+    def test__accept_key(self):
+        pass
+
+    def test_nodes(self):
+        pass
+
+    def test_agent(self):
+        pass
+
+    def test_pre_delete(self):
+        pass
+    """
     def test_add_endpoint(self):
         backend = self.patch_lb('backend', mock=True)
         with self.patch_lb('_apply_endpoint'):

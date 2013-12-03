@@ -153,6 +153,7 @@ class Environment(AuditedModel):
         if self.backend.autoloads:
             log.info('Autoloading %s' % source)
 
+            deferreds = []
             # Use stub deploy for plugins. This deploy is not saved because it
             # represents a minor, incremental change.
             deploy = Deploy.create(environment=self)
@@ -167,7 +168,10 @@ class Environment(AuditedModel):
                     # A simple `reload()` is sufficient to load any file
                     # changes and restart processes. A `restart()` would have
                     # been called if the Docker node image were recompiled.
-                    instance.reload()
+                    # REM: don't block
+                    deferreds.append(instance.reload())
+
+            # TODO: join : defer.DeferredList(deferreds)
 
     def _save_deploy(self, deploy_task, release=None):
         """
@@ -208,12 +212,15 @@ class Environment(AuditedModel):
                 self.app_paths = snapshot.get_app_paths()
                 # Build new images for source
                 snapshot.build_and_push(None, self.system)
-                self._deploy_to_instances()
+                threads.blockingCallFromThread(reactor, self._deploy_to_instances)
+                #self._deploy_to_instances()
             else:
                 # Object is release
                 # The release can be deployed immediately since the source
                 # images were compiled and pushed when the release was created.
-                self._deploy_to_instances(obj)
+                threads.blockingCallFromThread(reactor, self._deploy_to_instances,
+                    obj)
+                #self._deploy_to_instances(obj)
 
         # Clean up temporary snapshots
         snapshot.clean_up()
@@ -252,17 +259,54 @@ class Environment(AuditedModel):
           deployed.
         """
 
-        group_pools = {None: pool.Group()}
+        def restart_instances(host):
+            result = Deferred()
+            state = {'count': 0, 'host_tasks_finished': False}
+            groups = {}
 
-        for group in self.groups.all():
-            group_pools[group] = pool.Pool(group.batch_size)
+            def on_restart_task_finished():
+                state['count'] -= 1
+                if state['host_tasks_finished'] and state['count'] == 0:
+                    restart.callback(True) # TODO: what do we callback?
 
-        host_pool = pool.Pool(settings.STRETCH_BATCH_SIZE)
-        for host in self.hosts.all():
-            host_pool.spawn(host.pull_nodes, group_pools[host.group], release)
+            def restart_instances(host):
+                restart_tasks = []
+                group = host.group
 
-        host_pool.join()
-        [p.join() for p in group_pools.values()]
+                if group and group not in groups:
+                    groups[group] = defer.DeferredSemaphore(group.batch_size)
+                else:
+                    groups[group] = ?
+                # handle when host == None
+                semaphore = groups[group]
+
+                for instance in self.instance.get():
+                    restart_tasks.append(semaphore.run(isntance.restart))
+
+                deferred = defer.DeferredList(restart_tasks)
+                state['count'] += 1
+                deferred.addCallback(on_restart_task_finished)
+
+            def get_hosts():
+                for host in self.hosts.all():
+                    deferred = host.agent.pull_node()
+                    deferred.addCallback(restart_instances, host)
+                    yield deferred
+
+            def on_host_tasks_finished():
+                state['host_tasks_finished'] = True
+
+            host_tasks = []
+            hosts = get_hosts()
+            cooperator = task.Cooperator()
+
+            for _ in xrange(settings.STRETCH_BATCH_SIZE):
+                deferreds.append(cooperator.coiterate(hosts))
+
+            host_task_list = defer.DeferredList(host_tasks)
+            host_task_list.addCallback(on_host_tasks_finished)
+
+            return defer.DeferredList([host_tasks, result])
 
     @classmethod
     def post_save(cls, sender, instance, created, **kwargs):
@@ -439,7 +483,9 @@ class Instance(AuditedModel):
         """
         instance = cls(environment=env, host=host, node=node)
         instance.save()
+        # REM: block
         instance.sync_node(node)
+        # REM: block
         host.agent.add_instance(instance)
 
         return instance
@@ -452,6 +498,7 @@ class Instance(AuditedModel):
         :Parameters:
           - `node`: the node to sync
         """
+        # REM: block
         if node not in self.host.nodes:
             self.host.agent.add_node(node)
             if self.environment.current_release:
@@ -469,7 +516,7 @@ class Instance(AuditedModel):
         Since reload is only used in development, there is no need to update
         the load balancer.
         """
-        self.host.agent.reload_instance(self)
+        return self.host.agent.reload_instance(self)
 
     @property
     def load_balancer(self):
@@ -814,7 +861,7 @@ class Group(AuditedModel):
         else:
             valid = self.minimum_nodes <= amount <= self.maximum_nodes
         if not valid:
-            raise Exception('invalid scaling amount')
+            raise ValueError('invalid scaling amount')
 
     @task
     def _create_host(self):
