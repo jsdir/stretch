@@ -3,6 +3,8 @@
 FROM ubuntu:12.10
 MAINTAINER Jason Sommer "gatoralli69@gmail.com"
 
+ADD agent /usr/local/share/stretch-agent
+
 #RUN apt-get install -y nginx php5 php5-cgi php5-fpm
 
 # nginx config

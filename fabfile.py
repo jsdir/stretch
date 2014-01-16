@@ -15,10 +15,13 @@ def cov():
 
 
 def build():
+    commit = _get_commit()
+
     with lcd(local_dir):
-        commit = _get_commit()
-        _docker_build('stretch/master', commit, 'build/master.dock')
-        _docker_build('stretch/agent', commit, 'build/agent.dock')
+        _docker_build('stretch/master', commit)
+
+    with lcd(os.path.join(local_dir, 'agent')):
+        _docker_build('stretch/agent', commit)
 
 
 def deploy():
@@ -47,8 +50,8 @@ def _deploy_agent(commit):
     # or call a stretch hook to deploy the new container
 
 
-def _docker_build(image, tag, source):
-    local('docker build -t %s#%s - < %s' % (image, tag, source))
+def _docker_build(image, tag):
+    local('docker build -t %s#%s .' % (image, tag))
 
 
 def _get_commit():

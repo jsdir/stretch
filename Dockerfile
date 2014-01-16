@@ -1,31 +1,17 @@
-# master
-
 FROM ubuntu:12.10
 MAINTAINER Jason Sommer "gatoralli69@gmail.com"
 
-ADD stretch /usr/local/share/stretch
+ADD bin /usr/local/share/stretch-master/bin
+ADD stretch /usr/local/share/stretch-master/stretch
+ADD requirements.txt /usr/local/share/stretch-master/requirements.txt
 
-RUN apt-get install -y python-pip
+ENV DEBIAN_FRONTEND noninteractive
 
-# Install pip packages
+RUN  echo "deb http://archive.ubuntu.com/ubuntu precise universe" >> /etc/apt/sources.list && apt-get update
 
-# nginx config
-#RUN sed -i -e"s/keepalive_timeout\s*65/keepalive_timeout 2/" /etc/nginx/nginx.conf
-#RUN echo "daemon off;" >> /etc/nginx/nginx.conf
+RUN apt-get install -y python-pip supervisor libpq-dev python-dev libevent-dev
 
-# php-fpm config
-#RUN sed -i -e "s/;cgi.fix_pathinfo=1/cgi.fix_pathinfo=0/g" /etc/php5/fpm/php.ini
-#RUN sed -i -e "s/;daemonize\s*=\s*yes/daemonize = no/g" /etc/php5/fpm/php-fpm.conf
+RUN cd /usr/local/share/stretch-master && pip install -r requirements.txt
 
-# Load files
-#ADD files /usr/share/stretch/files
-#ADD app /usr/share/stretch/app
-
-# Nginx site conf
-#RUN rm /etc/nginx/sites-available/default
-#RUN ln -s /usr/share/stretch/files/nginx.conf /etc/nginx/sites-available/default
-
-# Start supervisor
-#RUN ln -s /usr/share/stretch/files/supervisord.conf /etc/supervisor/conf.d/supervisord.conf
-
-#CMD ["/usr/bin/supervisord", "-n"]
+EXPOSE 80
+CMD ["/usr/bin/supervisord", "-n"]
