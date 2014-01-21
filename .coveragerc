@@ -1,0 +1,20 @@
+[run]
+omit =
+    */migrations/*
+    *settings*
+    *__init__*
+    stretch/urls.py
+    stretch/wsgi.py
+
+source =
+    stretch
+    lib
+branch = 1
+
+[report]
+exclude_lines =
+    pragma: no cover
+    def __repr__
+    raise NotImplementedError
+    if __name__ == .__main__.:
+    def parse_args
