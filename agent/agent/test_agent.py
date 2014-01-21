@@ -1,10 +1,8 @@
-from __future__ import absolute_import
-
 import pymongo
 
 from twisted.internet import defer, reactor
 from twisted.trial.unittest import TestCase
-from server import Agent, db_client, AgentServerProtocol
+from .server import Agent, db_client, AgentServerProtocol
 from autobahn.twisted.websocket import connectWS, listenWS
 from autobahn.wamp import (WampServerFactory, WampClientFactory,
                            WampClientProtocol)
@@ -101,3 +99,67 @@ class TestAgent(TestCase):
         content = yield self.call('ns#remove_node', '1')
         self.assertEquals(content, None)
         self.assertEquals(db['nodes'].find({'_id': '1'}).count(), 0)
+
+    @defer.inlineCallbacks
+    def test_update_node(self):
+        db['nodes'].insert({'_id': '1'})
+
+        content = yield self.call('ns#pull_node', '1')
+
+        """
+        Options:
+
+        - app_path (local path if deploying from source)
+        - sha (release sha)
+        - env_id
+        - env_name
+        - image (name)
+        - ports (ports [in the container] to expose on the containing host)
+
+        """
+
+        self.assertEquals(content, None)
+        self.assertEquals(db['nodes'].find({'_id': '1'}).count(), 0)
+
+    @defer.inlineCallbacks
+    def test_add_instance(self):
+
+        """
+        Options:
+
+        - node_id
+        - host_name
+        - config_key
+
+        Process configuration with context = {
+            'env_name': self.node.data['env_name'],
+            'host_name': self.data['host_name'],
+            'instance_id': self.data['_id'],
+            'release': self.node.data['sha']
+        }
+        """
+        pass
+
+    @defer.inlineCallbacks
+    def test_remove_instance(self):
+        pass
+
+    @defer.inlineCallbacks
+    def test_reload_instance(self):
+        pass
+
+    @defer.inlineCallbacks
+    def test_restart_instance(self):
+        pass
+
+    # part of the reactor needs to loop and check running containers to reboot on crash
+    # or persist to etcd
+
+    # interface with supervisor? "docker start/exec and logging?"
+    # Agent should be set to reboot through host's supervisor
+
+    # if not using supervisor how are:
+
+    #   - autorestarts
+    #   - logging
+    #   - etcd push

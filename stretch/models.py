@@ -19,7 +19,7 @@ from django.dispatch import receiver
 from django.core.validators import RegexValidator
 from django.conf import settings
 
-from stretch import (signals, sources, utils, backends, parser, exceptions,
+from stretch import (signals, source, utils, backend, parser, exceptions,
                      config_managers)
 
 from stretch.agent import supervisors
@@ -31,6 +31,7 @@ log = logging.getLogger('stretch')
 alphanumeric = RegexValidator(r'^[a-zA-Z0-9_\-]*$',
                               'Only alphanumeric characters, underscores, and '
                               'hyphens are allowed.')
+
 
 class AuditedModel(models.Model):
     """
@@ -168,10 +169,12 @@ class Environment(AuditedModel):
                     # A simple `reload()` is sufficient to load any file
                     # changes and restart processes. A `restart()` would have
                     # been called if the Docker node image were recompiled.
-                    # REM: don't block
                     deferreds.append(instance.reload())
 
-            # TODO: join : defer.DeferredList(deferreds)
+            def get_task_list():
+                return defer.DeferredList(deferreds)
+
+            threads.blockingCallFromThread(reactor, get_task_list)
 
     def _save_deploy(self, deploy_task, release=None):
         """
@@ -267,21 +270,22 @@ class Environment(AuditedModel):
             def on_restart_task_finished():
                 state['count'] -= 1
                 if state['host_tasks_finished'] and state['count'] == 0:
-                    restart.callback(True) # TODO: what do we callback?
+                    restart.callback(None)
 
             def restart_instances(host):
-                restart_tasks = []
                 group = host.group
+                restart_tasks = []
 
-                if group and group not in groups:
-                    groups[group] = defer.DeferredSemaphore(group.batch_size)
+                if group:
+                    if group not in groups:
+                        batch_size = group.batch_size
+                        groups[group] = defer.DeferredSemaphore(batch_size)
+                    semaphore = groups[group]
+                    for instance in self.instances.get():
+                        restart_tasks.append(semaphore.run(instance.restart))
                 else:
-                    groups[group] = ?
-                # handle when host == None
-                semaphore = groups[group]
-
-                for instance in self.instance.get():
-                    restart_tasks.append(semaphore.run(isntance.restart))
+                    for instance in self.instanced.get():
+                        restart_tasks.append(instance.restart)
 
                 deferred = defer.DeferredList(restart_tasks)
                 state['count'] += 1
@@ -738,12 +742,6 @@ class Host(AuditedModel):
         host.finish_provisioning()
         host.save()
         return host
-
-    def pull_nodes(self, group_pool, release=None):
-        [self.agent.pull(node, release) for node in self.nodes]
-
-        for instance in self.instances.get():
-            group_pool.spawn(instance.restart)
 
     def create_instance(self, node):
         Instance.create(self.environment, self, node)

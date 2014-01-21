@@ -215,6 +215,13 @@ REST_FRAMEWORK = {
 from .celery_settings import *
 from .salt_settings import *
 
+
+# Used
+STRETCH_DATA_DIR = '/var/lib/stretch'
+
+
+
+
 # Default settings
 STRETCH_SOURCES = {}
 STRETCH_BACKENDS = {}

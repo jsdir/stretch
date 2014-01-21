@@ -2,19 +2,19 @@ from mock import Mock, patch, call
 from nose.tools import eq_, raises
 import time
 
-from stretch import sources, signals
+from stretch import source, signals
 
 
 class TestSource(object):
     def setUp(self):
-        self.source = sources.Source({'foo': 'bar'})
+        self.source = source.Source({'foo': 'bar'})
 
     @raises(NameError)
     def test_require_option(self):
         eq_(self.source.require_option('foo'), 'bar')
         self.source.require_option('what')
 
-    @patch('stretch.sources.utils')
+    @patch('stretch.source.utils')
     def test_get_snapshot(self, mock_utils):
 
         def mock_temp_dir(path):
@@ -77,37 +77,10 @@ class TestFileSystemSource(object):
         assert not signals.sync_source.send.called
 
 
-class TestGitRepositorySource(object):
-    @patch('django.conf.settings.STRETCH_CACHE_DIR', '/cache')
-    @patch('stretch.utils.makedirs', Mock())
-    @patch('stretch.sources.git')
-    def test_pull(self, git):
-        source = sources.GitRepositorySource({'url': 'repo_url'})
-        path = '/cache/046e9fb39a04020f6cabc0a83e01ad3c108a6225'
-
-        with patch('os.path.exists', return_value=False):
-            # assert latest commit pulled
-            eq_(source.pull(), path)
-            git.Repo.clone_from.assert_called_with('repo_url', path)
-
-        git.reset_mock()
-        with patch('os.path.exists', return_value=True):
-            eq_(source.pull(), path)
-            git.Repo.assert_called_with(path)
-
-        eq_(source.pull({'ref': 'a'}), path)
-        git.reset_mock()
-        eq_(source.pull({'ref': 'a'}), path)
-        # assert repo 'a' cached
-        assert not git.Repo.called
-        assert not git.Repo.clone_from.called
-
-
-
 class TestEventHandler(object):
     def test_event_handler(self):
         callback = Mock()
-        handler = sources.EventHandler(callback)
+        handler = source.EventHandler(callback)
         handler.timeout = 0.02
 
         handler.on_any_event(1)

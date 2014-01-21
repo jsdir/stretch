@@ -1,1 +1,2 @@
 autobahn==0.7.4
+docker-py==0.2.3
