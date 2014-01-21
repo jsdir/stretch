@@ -1,0 +1,34 @@
+#!/usr/bin/env python
+from setuptools import setup
+
+
+dev_requires = [
+    'flake8>=2.0,<2.1',
+]
+
+tests_require = [
+    'nose>=1.3.0,<1.4.0',
+    'coverage>=3.6,<3.7',
+    'mock>=0.8.0',
+]
+
+install_requires = [
+    'Django>=1.5.5,<1.6',
+    'django-celery>=3.0.11,<3.1.0',
+]
+
+
+setup(
+    name='stretch',
+    version='0.1.0',
+    author='Jason Sommer',
+    description='A PaaS powered by docker.',
+    long_description=open('README.md').read(),
+    install_requires=install_requires,
+    extras_require={
+        'tests': tests_require,
+        'dev': dev_requires,
+    },
+    tests_require=tests_require,
+    license='MIT',
+)
