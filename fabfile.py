@@ -1,5 +1,5 @@
 import os
-from fabric.api import local, lcd, hide
+from fabric.api import local, lcd, hide, env
 
 local_dir = os.path.dirname(os.path.realpath(__file__))
 
@@ -7,12 +7,14 @@ local_dir = os.path.dirname(os.path.realpath(__file__))
 def test():
     with hide('status', 'aborts'):
         with lcd(local_dir):
-            local('nosetests --rednose --nologcapture --verbosity=1')
+            local('%s test --rednose' % os.path.join(local_dir, 'manage.py'))
 
 
 def cov():
+    env.warn_only = True
     with hide('status', 'aborts'):
-        local('%s test --rednose --nologcapture --with-coverage --cover-package=stretch' % os.path.join(local_dir, 'manage.py'))
+        local('coverage run manage.py test --rednose')
+        local('coverage report -m')
 
 
 def build():
