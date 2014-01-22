@@ -13,10 +13,9 @@ class TestApi(TestCase):
 
         self.assertEquals(response.code, 200)
 
+    def testCreateRelease(self):
+        raise Exception()
+
     def testDeploy(self):
-        response = self.client.get('/api/systems/sys/releas')
+        response = self.client.get('/api/systems/sys/release')
         self.assertEquals(response.code, 200)
-
-
-Environment.deploy.delay(release)
-# Start streaming websocket

@@ -156,3 +156,8 @@ LOGGING = {
         },
     }
 }
+
+# Stretch-specific settings
+
+## Paths
+STRETCH_CACHE_DIR = '/var/cache/stretch'
