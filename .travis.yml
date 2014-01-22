@@ -9,12 +9,12 @@ before_install:
   - pip install http://dl.dropbox.com/u/174789/m2crypto-0.20.1.tar.gz
 
 install:
-  - pip install -q -e .
-  - pip install -q coveralls rednose
+  - pip install -e .[tests]
+  - pip install -q coveralls
 
 script:
   - coverage run manage.py test --rednose
-  - coverage report
+  - coverage report -m
 
 after_success:
   - coveralls
