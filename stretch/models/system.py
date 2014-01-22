@@ -1,6 +1,9 @@
+from django.db import models
+
+from stretch import utils
 from stretch.models import AuditedModel, Release
 from stretch.models.validators import alphanumeric
-from stretch.source import get_source
+from stretch.source import get_sources
 
 
 class System(AuditedModel):
@@ -10,7 +13,6 @@ class System(AuditedModel):
     name = models.TextField(unique=True, validators=[alphanumeric])
 
     class Meta:
-        app_name = 'stretch'
         db_table = 'stretch_system'
 
     def create_release(self, options):
@@ -24,7 +26,7 @@ class System(AuditedModel):
         source is used per system for now. Multiple source handling may be
         implemented.)
         """
-        system_sources = sources.get_sources(self)
-        if not system_sources:
+        sources = get_sources(self)
+        if not sources:
             raise exceptions.UndefinedSource()
-        return system_sources[0]
+        return sources[0]

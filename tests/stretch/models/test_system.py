@@ -9,6 +9,10 @@ class TestSystem(TestCase):
 
     def testCreateRelease(self):
         # Stub default source
+        source = Mock()
+
         release = self.system.create_release({'foo': 'bar'})
-        # Assert source called with {'foo': 'bar'}
+
+        source.pull.assert_called_with({'foo': 'bar'})
+
         # Assert release created correctly

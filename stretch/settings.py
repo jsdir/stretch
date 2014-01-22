@@ -1,3 +1,6 @@
+import sys
+
+
 # Django settings for stretch project.
 
 DEBUG = True
@@ -165,3 +168,10 @@ LOGGING = {
 
 ## Paths
 STRETCH_CACHE_DIR = '/var/cache/stretch'
+
+
+# Test settings
+if 'test' in sys.argv or 'test_coverage' in sys.argv:
+    DATABASES['default'] = {'ENGINE': 'django.db.backends.sqlite3'}
+    LOGGING = {}
+    CELERY_ALWAYS_EAGER = True
