@@ -8,6 +8,8 @@ dev_requires = [
 
 tests_require = [
     'nose>=1.3.0,<1.4.0',
+    'django-nose>=1.2,<1.3',
+    'rednose==0.4.1',
     'coverage>=3.6,<3.7',
     'mock>=0.8.0',
 ]

@@ -1,17 +1,13 @@
 from django.conf.urls import patterns, include, url
+from stretch.api import MySseStreamView
 
-# Uncomment the next two lines to enable the admin:
-# from django.contrib import admin
-# admin.autodiscover()
+
+api_patterns = patterns('',
+    url(r'^systems/(\w+)/releases/$', 'stretch.api.index_releases'),
+    url(r'^systems/(\w+)/envs/(\w+)/deploy/$', 'stretch.api.deploy'),
+    url(r'^test/(\w+)/$', 'stretch.api.lol')
+)
 
 urlpatterns = patterns('',
-    # Examples:
-    # url(r'^$', 'stretch.views.home', name='home'),
-    # url(r'^stretch/', include('stretch.foo.urls')),
-
-    # Uncomment the admin/doc line below to enable admin documentation:
-    # url(r'^admin/doc/', include('django.contrib.admindocs.urls')),
-
-    # Uncomment the next line to enable the admin:
-    # url(r'^admin/', include(admin.site.urls)),
+    url(r'^api/', include(api_patterns)),
 )

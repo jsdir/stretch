@@ -6,7 +6,8 @@ local_dir = os.path.dirname(os.path.realpath(__file__))
 
 def test():
     with hide('status', 'aborts'):
-        local('%s test --rednose --nologcapture' % os.path.join(local_dir, 'manage.py'))
+        with lcd(local_dir):
+            local('nosetests --rednose --nologcapture --verbosity=1')
 
 
 def cov():
