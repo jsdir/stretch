@@ -1,7 +1,9 @@
 import json
+import time
 from django.http import HttpResponse, HttpResponseNotFound, StreamingHttpResponse
+from django.views.decorators.csrf import csrf_exempt
 
-from stretch import models
+from stretch import models, tasks
 
 
 def index_releases(request, system_name):
@@ -20,6 +22,7 @@ def index_releases(request, system_name):
     }), mimetype='application/json')
 
 
+@csrf_exempt
 def deploy(request, system_name, env_name):
     release_id = request.POST.get('release_id')
 
@@ -27,12 +30,10 @@ def deploy(request, system_name, env_name):
     if not release:
         return HttpResponseNotFound()
 
-    tasks.deploy().delay()
+    task = env.deploy.delay(release)
+    return StreamingHttpResponse(stream_response_generator(task))
 
-    return StreamingHttpResponse(stream_response_generator())
 
-
-def stream_response_generator():
-    for x in range(1,11):
-        yield 'Log entry {}\n'.format(x)
-        time.sleep(.2)
+def stream_response_generator(task):
+    task.get()
+    yield
