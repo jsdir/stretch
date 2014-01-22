@@ -125,12 +125,8 @@ INSTALLED_APPS = (
     'django.contrib.staticfiles',
 
     'django_nose',
-
     'stretch',
-    # Uncomment the next line to enable the admin:
-    # 'django.contrib.admin',
-    # Uncomment the next line to enable admin documentation:
-    # 'django.contrib.admindocs',
+    'south',
 )
 
 TEST_RUNNER = 'django_nose.NoseTestSuiteRunner'
@@ -169,7 +165,7 @@ LOGGING = {
 ## Paths
 STRETCH_CACHE_DIR = '/var/cache/stretch'
 
-
+DATABASES['default'] = {'ENGINE': 'django.db.backends.sqlite3'}
 # Test settings
 if 'test' in sys.argv or 'test_coverage' in sys.argv:
     DATABASES['default'] = {'ENGINE': 'django.db.backends.sqlite3'}

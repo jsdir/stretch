@@ -1,31 +1,32 @@
 import json
-from django.http import HttpResponse, HttpResponseNotFound, StreamingHttpResponse
+from django.http import (HttpResponse, HttpResponseNotFound,
+                         StreamingHttpResponse, Http404)
 from django.views.decorators.csrf import csrf_exempt
 
 from stretch import models, tasks
 
 
-def index_releases(request, system_name):
-    release_tag = request.GET.get('tag')
-
-    system = _get_system(system_name)
-    release = _get_release(release_tag)
-
-    return HttpResponse(json.dumps({
-        'id': release.pk
-    }), mimetype='application/json')
-
-
 @csrf_exempt
-def create_release(request, system_name):
-    options = request.POST.get('options')
+def release(request, system_name):
+    if request.method == 'GET':
+        release_tag = request.GET.get('tag')
 
-    system = _get_system(system_name)
-    release = system.create_release(options)
+        system = _get_system(system_name)
+        release = _get_release(release_tag)
 
-    return HttpResponse(json.dumps({
-        'id': release.pk
-    }), mimetype='application/json')
+        return HttpResponse(json.dumps({
+            'id': release.pk
+        }), mimetype='application/json')
+
+    elif request.method == 'POST':
+        options = json.loads(request.POST['options'])
+
+        system = _get_system(system_name)
+        release = system.create_release(options)
+
+        return HttpResponse(json.dumps({
+            'id': release.pk
+        }), mimetype='application/json')
 
 
 @csrf_exempt
@@ -46,12 +47,14 @@ def stream_response_generator(task):
 
 
 def _get_system(system_name):
-    system = models.System.find(name=system_name)
-    if not system:
-        raise HttpResponseNotFound()
+    try:
+        return models.System.objects.get(name=system_name)
+    except models.System.DoesNotExist:
+        raise Http404()
 
 
 def _get_release(release_tag):
-    release = models.Release.find(tag=release_tag)
-    if not release: # TODO
-        raise HttpResponseNotFound()
+    try:
+        return models.Release.objects.get(tag=release_tag)
+    except models.Release.DoesNotExist:
+        raise Http404()

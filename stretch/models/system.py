@@ -10,13 +10,15 @@ class System(AuditedModel):
     """
     Stateful container for environments.
     """
+
     name = models.TextField(unique=True, validators=[alphanumeric])
 
     class Meta:
-        db_table = 'stretch_system'
+        app_label = 'stretch'
 
     def create_release(self, options):
-        return Release.create(self.source.pull(options), system=self)
+        path, tag = self.source.pull(options)
+        return Release.create(path, tag, system=self)
 
     @property
     @utils.memoized

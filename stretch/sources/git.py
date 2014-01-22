@@ -42,10 +42,11 @@ class GitRepositorySource(Source):
             repo = git.Repo.clone_from(self.url, path)
 
         if ref:
-            log.info('Using commit: %s' % ref)
             repo.head.reset(ref, working_tree=True)
         else:
             log.info('No commit specified.')
-            log.info('Using commit: %s' % repo.head.commit.hexsha)
+            ref = repo.head.commit.hexsha
 
-        return path
+        log.info('Using commit: %s' % ref)
+
+        return path, ref

@@ -19,6 +19,7 @@ install_requires = [
     'django-celery>=3.0.11,<3.1.0',
     'Celery==3.1',
     'gunicorn>=18.0,<19.0',
+    'south>=0.8.4,<0.9',
 ]
 
 
