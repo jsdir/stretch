@@ -9,11 +9,11 @@ class Environment(AuditedModel):
     Stateful container for hosts, instances, and groups.
     """
 
-    name = models.TextField(validators=[alphanumeric])
-    system = models.ForeignKey('System', related_name='environments')
-
     class Meta:
         app_label = 'stretch'
+
+    name = models.TextField(validators=[alphanumeric])
+    system = models.ForeignKey('System', related_name='environments')
 
     def deploy(self):
         pass

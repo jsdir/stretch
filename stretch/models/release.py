@@ -11,12 +11,12 @@ class Release(AuditedModel):
     back to.
     """
 
+    class Meta:
+        app_label = 'stretch'
+
     name = models.TextField(validators=[alphanumeric])
     tag = models.TextField(validators=[alphanumeric])
     system = models.ForeignKey('System', related_name='releases')
-
-    class Meta:
-        app_label = 'stretch'
 
     @classmethod
     def create(cls, path, tag, system):

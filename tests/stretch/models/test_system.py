@@ -1,21 +1,22 @@
-from mock import Mock
+from mock import Mock, patch
+from nose.tools import raises
 from django.test import TestCase
 
 from stretch.models import System
+from stretch import exceptions
 
 
 class TestSystem(TestCase):
-    def setUp(self):
-        self.system = System(name='system')
 
-    '''
-    def testCreateRelease(self):
-        # Stub default source
-        source = Mock()
+    @patch('stretch.source.get_sources')
+    def testSource(self, get_sources):
+        system = System(name='sys1')
+        get_sources.return_value = ['foo']
+        self.assertEquals(system.source, 'foo')
 
-        release = self.system.create_release({'foo': 'bar'})
-
-        source.pull.assert_called_with({'foo': 'bar'})
-
-        # Assert release created correctly
-    '''
+    @raises(exceptions.UndefinedSource)
+    @patch('stretch.source.get_sources')
+    def testSourceFails(self, get_sources):
+        system = System(name='sys2')
+        get_sources.return_value = []
+        system.source
