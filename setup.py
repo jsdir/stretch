@@ -21,7 +21,7 @@ install_requires = [
     'gunicorn>=18.0,<19.0',
     'south>=0.8.4,<0.9',
     'GitPython==0.3.2.RC1',
-    'watchdog>=0.7.0<0.8.0',
+    'watchdog>=0.7.0,<0.8.0',
 ]
 
 
