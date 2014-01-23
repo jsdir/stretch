@@ -1,6 +1,12 @@
+import os
 import random
+import inspect
+import tempfile
+import distutils
 import cPickle
 
+
+#-#-#-#- Decorators -#-#-#-#
 
 class memoized(object):
     """
@@ -18,6 +24,53 @@ class memoized(object):
             self.cache[key] = self.func(*args, **kwargs)
         return self.cache[key]
 
+
+#-#-#-#- Files -#-#-#-#
+
+def make_dir(path):
+    """
+    Creates a directory. This is the equivalent of `mkdir -p` in unix.
+    """
+    try:
+        os.makedirs(path)
+    except OSError as exc:
+        if exc.errno == errno.EEXIST and os.path.isdir(path):
+            pass
+        else:
+            raise
+
+
+def temp_dir(path=None):
+    """
+    Copies the contents of `path` into a temporary directory. The path to
+    this directory is returned. If `path` is None, nothing is copied into the
+    temporary directory.
+    """
+    # Create temporary directory in case it doesn't exist.
+    mkdir(settings.STRETCH_TEMP_DIR)
+
+    dest = tempfile.mkdtemp(prefix='%s/' % settings.STRETCH_TEMP_DIR)
+    if path:
+        copy_dir(path, dest)
+    return dest
+
+
+def copy_dir(path, dest):
+    """
+    Copies the contents of `path` into `dest`.
+    """
+    distutils.dir_util.copy_tree(path, dest)
+
+
+#-#-#-#- Objects -#-#-#-#
+
+def find_subclasses(module, obj_class):
+    return [cls for name, cls in inspect.getmembers(module)
+        if inspect.isclass(cls) and issubclass(cls, obj_class)
+    ]
+
+
+#-#-#-#- Naming -#-#-#-#
 
 def generate_random_hex(length=16):
     hexdigits = '0123456789abcdef'

@@ -1,6 +1,6 @@
 from django.db import models
 
-from stretch import utils, source, exceptions
+from stretch import utils, source
 from stretch.models import AuditedModel, Release
 from stretch.models.validators import alphanumeric
 
@@ -29,5 +29,5 @@ class System(AuditedModel):
         """
         sources = source.get_sources(self)
         if not sources:
-            raise exceptions.UndefinedSource()
+            raise source.NoSourceException()
         return sources[0]

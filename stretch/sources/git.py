@@ -8,7 +8,7 @@ from stretch import utils
 from stretch.source import Source
 
 
-log = logging.getLogger('stretch')
+log = logging.getLogger(__name__)
 
 
 class GitRepositorySource(Source):
@@ -16,11 +16,13 @@ class GitRepositorySource(Source):
     A source that pulls code from a git repository.
     """
 
+    name = 'git'
+
     def __init__(self, options):
         super(GitRepositorySource, self).__init__(options)
         self.url = self.require_option('url')
 
-    def pull(self, options={}):
+    def pull(self, options):
         ref = options.get('ref')
         path = os.path.join(settings.STRETCH_CACHE_DIR,
                             hashlib.sha1(self.url).hexdigest())
@@ -37,7 +39,7 @@ class GitRepositorySource(Source):
             log.debug("Cached repo doesn't exist")
             log.info('Cloning repo: %s' % self.url)
             # Create directory
-            utils.makedirs(path)
+            utils.make_dir(path)
             # Clone the repository into cache
             repo = git.Repo.clone_from(self.url, path)
 

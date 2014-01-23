@@ -164,6 +164,11 @@ LOGGING = {
 
 ## Paths
 STRETCH_CACHE_DIR = '/var/cache/stretch'
+STRETCH_TEMP_DIR = '/tmp/stretch'
+
+## Source / Backend Defaults
+STRETCH_SOURCES = {}
+STRETCH_BACKENDS = {}
 
 DATABASES['default'] = {'ENGINE': 'django.db.backends.sqlite3'}
 # Test settings

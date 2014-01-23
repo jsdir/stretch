@@ -22,7 +22,7 @@ class TestApi(TestCase):
         self.release.system = self.system
         self.release.save()
 
-    def testIndexReleases(self):
+    def test_index_releases(self):
         response = self.client.get('/api/systems/a/releases/?tag=124')
         self.assertEquals(response.status_code, 404)
 
@@ -33,7 +33,7 @@ class TestApi(TestCase):
         self.assertEquals(json.loads(response.content), {'id': 1})
 
     @patch('stretch.models.System.source', new_callable=PropertyMock)
-    def testCreateRelease(self, source_property):
+    def test_create_release(self, source_property):
         source = Mock()
         source.pull.return_value = ('path', '12345')
         source_property.return_value = source
@@ -46,7 +46,7 @@ class TestApi(TestCase):
         self.assertEquals(release.tag, '12345')
 
     @patch('stretch.models.Environment.deploy')
-    def testDeploy(self, deploy):
+    def test_deploy(self, deploy):
         data = {'release_id': 2}
         post = self.client.post
         deploy.delay.return_value = Mock()

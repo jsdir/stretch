@@ -15,7 +15,7 @@ class Release(AuditedModel):
         app_label = 'stretch'
 
     name = models.TextField(validators=[alphanumeric])
-    tag = models.TextField(validators=[alphanumeric])
+    tag = models.TextField(validators=[alphanumeric]) # TODO: unique per system
     system = models.ForeignKey('System', related_name='releases')
 
     @classmethod
@@ -34,6 +34,8 @@ class Release(AuditedModel):
             tag=tag,
             system=system
         )
+
+        # self.create_from(path)
 
         # Build finished
         release.save()
