@@ -45,13 +45,28 @@ class TestApi(TestCase):
         source.pull.assert_called_with({'foo': 'bar'})
         self.assertEquals(release.tag, '12345')
 
-    '''
-    def testDeploy(self):
-        response = self.client.get('/api/systems/none/release')
+    @patch('stretch.models.Environment.deploy')
+    def testDeploy(self, deploy):
+        data = {'release_id': 2}
+        post = self.client.post
+        deploy.delay.return_value = Mock()
+
+        response = post('/api/systems/a/envs/a/deploy/', data=data)
         self.assertEquals(response.status_code, 404)
 
-        response = self.client.get('/api/systems/sys/release')
+        response = post('/api/systems/sys/envs/a/deploy/', data=data)
         self.assertEquals(response.status_code, 404)
 
-        response = self.client.get('/api/systems/sys/release')
-    '''
+        response = post('/api/systems/sys/envs/env/deploy/', data=data)
+        self.assertEquals(response.status_code, 404)
+
+        response = post('/api/systems/sys/envs/env/deploy/', data={
+            'release_id': 1
+        })
+
+        deploy.delay.assert_called_with(self.release)
+
+        # Block until all content is received.
+        list(response.streaming_content)
+
+        self.assertEquals(response.status_code, 200)

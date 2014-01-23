@@ -7,14 +7,15 @@ local_dir = os.path.dirname(os.path.realpath(__file__))
 def test():
     with hide('status', 'aborts'):
         with lcd(local_dir):
-            local('%s test --rednose' % os.path.join(local_dir, 'manage.py'))
+            local('./manage.py test --rednose')
 
 
 def cov():
     env.warn_only = True
     with hide('status', 'aborts'):
-        local('coverage run manage.py test --rednose')
-        local('coverage report -m')
+        with lcd(local_dir):
+            local('coverage run manage.py test --rednose')
+            local('coverage report -m')
 
 
 def build():

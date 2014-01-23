@@ -14,3 +14,6 @@ class Environment(AuditedModel):
 
     class Meta:
         app_label = 'stretch'
+
+    def deploy(self):
+        pass

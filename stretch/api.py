@@ -18,7 +18,7 @@ def release(request, system_name):
             'id': release.pk
         }), mimetype='application/json')
 
-    elif request.method == 'POST':
+    elif request.method == 'POST':  # pragma: no branch
         options = json.loads(request.POST['options'])
 
         system = _get_system(system_name)
@@ -32,10 +32,17 @@ def release(request, system_name):
 @csrf_exempt
 def deploy(request, system_name, env_name):
     release_id = request.POST.get('release_id')
+    system = _get_system(system_name)
 
-    release = models.Release.find(release_id)
-    if not release:
-        return HttpResponseNotFound()
+    try:
+        env = system.environments.get(name=env_name)
+    except models.Environment.DoesNotExist:
+        raise Http404()
+
+    try:
+        release = models.Release.objects.get(pk=release_id)
+    except models.Release.DoesNotExist:
+        raise Http404()
 
     task = env.deploy.delay(release)
     return StreamingHttpResponse(stream_response_generator(task))
