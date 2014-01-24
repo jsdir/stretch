@@ -16,7 +16,7 @@ class System(AuditedModel):
     name = models.TextField(unique=True, validators=[alphanumeric])
 
     def create_release(self, options):
-        path, tag = self.source.pull(options)
+        path, tag = self.source.clone(options)
         return Release.create(path, tag, system=self)
 
     @property

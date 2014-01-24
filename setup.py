@@ -22,6 +22,7 @@ install_requires = [
     'south>=0.8.4,<0.9',
     'GitPython==0.3.2.RC1',
     'watchdog>=0.7.0,<0.8.0',
+    'PyYAML>=3.10,<3.11',
 ]
 
 

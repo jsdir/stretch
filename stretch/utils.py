@@ -1,8 +1,10 @@
 import os
 import random
 import inspect
+import shutil
 import tempfile
 import distutils
+import collections
 import cPickle
 
 
@@ -60,6 +62,25 @@ def copy_dir(path, dest):
     Copies the contents of `path` into `dest`.
     """
     distutils.dir_util.copy_tree(path, dest)
+
+
+def delete_dir(path):
+    shutil.rmtree(path)
+
+
+#-#-#-#- Dictionaries -#-#-#-#
+
+def merge(original_dict, new):
+    """
+    Recursively merge dict-like objects.
+    """
+    for key, value in new.iteritems():
+        if isinstance(value, collections.Mapping):
+            original_dict[key] = merge(original_dict.get(key, {}), value)
+        else:
+            original_dict[key] = new[key]
+
+    return original_dict
 
 
 #-#-#-#- Objects -#-#-#-#

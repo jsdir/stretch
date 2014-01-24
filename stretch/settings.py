@@ -165,6 +165,7 @@ LOGGING = {
 ## Paths
 STRETCH_CACHE_DIR = '/var/cache/stretch'
 STRETCH_TEMP_DIR = '/tmp/stretch'
+STRETCH_DATA_DIR = '/var/lib/stretch'
 
 ## Source / Backend Defaults
 STRETCH_SOURCES = {}

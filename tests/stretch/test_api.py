@@ -32,17 +32,18 @@ class TestApi(TestCase):
         response = self.client.get('/api/systems/sys/releases/?tag=123')
         self.assertEquals(json.loads(response.content), {'id': 1})
 
+    @patch('stretch.models.release.Snapshot', Mock())
     @patch('stretch.models.System.source', new_callable=PropertyMock)
     def test_create_release(self, source_property):
         source = Mock()
-        source.pull.return_value = ('path', '12345')
+        source.clone.return_value = ('path', '12345')
         source_property.return_value = source
 
         data = {'options': json.dumps({'foo': 'bar'})}
         response = self.client.post('/api/systems/sys/releases/', data=data)
         release = Release.objects.get(pk=json.loads(response.content)['id'])
 
-        source.pull.assert_called_with({'foo': 'bar'})
+        source.clone.assert_called_with({'foo': 'bar'})
         self.assertEquals(release.tag, '12345')
 
     @patch('stretch.models.Environment.deploy')
