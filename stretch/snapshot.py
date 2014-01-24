@@ -10,10 +10,10 @@ from django.conf import settings
 from stretch import utils
 
 
+LOGGING = settings.LOGGING
 log = logging.getLogger(__name__)
 docker_client = docker.Client(base_url='unix://var/run/docker.sock',
                               version='1.6', timeout=10)
-
 
 class Snapshot(object):
 
@@ -21,7 +21,6 @@ class Snapshot(object):
         self.path = path
         self.nodes = []
         self.config = {}
-        #self.containers = []
         self.parse()
 
     def parse(self):
@@ -83,6 +82,7 @@ class Snapshot(object):
         for image in images:
             log.info('Pushing "%s" to registry...')
 
+            image = ':'.join(image.split(':')[0:-1])
             for line in docker_client().push(image, stream=True):
                 # Log the push process
                 log.info(line)
@@ -198,19 +198,26 @@ class Container(object):
         tag = None
         if self.node:
             registry = settings.STRETCH_REGISTRY
-            tag = '%s/stretch/builds/%s:%s' % (
-                registry, node_map[self.node.name], release.pk
+            node_name = self.node.name
+            if node_name not in node_map:
+                raise KeyError(
+                    'Node "%s" does not exist in the system.' % node_name
+                )
+            tag = '%s/stretch/build_%s:%s' % (
+                registry, node_map[node_name], release.pk
             )
             log.info('Building node "%s" as "%s"' % (self.node.name, tag))
         else:
             log.info('Building container at "%s"...' % self.path)
 
+        output = ''
         for line in client.build(self.path, tag=tag, rm=True, stream=True):
             # Log the build process
             log.info(line)
+            output += line
 
         # Check if the image was built successfully
-        match = re.search(r'Successfully built ([0-9a-f]+)', line)
+        match = re.search(r'Successfully built ([0-9a-f]+)', output)
         if not match:
             raise BuildException(
                 'Failed to build image from "%s".' % self.dockerfile

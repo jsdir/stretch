@@ -144,17 +144,35 @@ LOGGING = {
             '()': 'django.utils.log.RequireDebugFalse'
         }
     },
+    'formatters': {
+        'standard': {
+            'format': '%(asctime)s [%(levelname)s] %(name)s: %(message)s'
+        },
+    },
     'handlers': {
         'mail_admins': {
             'level': 'ERROR',
             'filters': ['require_debug_false'],
             'class': 'django.utils.log.AdminEmailHandler'
+        },
+        'logfile': {
+            'level':'DEBUG',
+            'class':'logging.handlers.RotatingFileHandler',
+            'filename': '/var/log/stretch/stretch.log',
+            'maxBytes': 50000,
+            'backupCount': 2,
+            'formatter': 'standard',
         }
     },
     'loggers': {
         'django.request': {
             'handlers': ['mail_admins'],
             'level': 'ERROR',
+            'propagate': True,
+        },
+        '': {
+            'handlers': ['logfile'],
+            'level': 'DEBUG',
             'propagate': True,
         },
     }
@@ -170,6 +188,12 @@ STRETCH_DATA_DIR = '/var/lib/stretch'
 ## Source / Backend Defaults
 STRETCH_SOURCES = {}
 STRETCH_BACKENDS = {}
+
+## Import local settings
+try:
+    from .local_settings import *
+except ImportError:
+    pass
 
 DATABASES['default'] = {'ENGINE': 'django.db.backends.sqlite3'}
 # Test settings
