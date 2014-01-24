@@ -23,6 +23,7 @@ install_requires = [
     'GitPython==0.3.2.RC1',
     'watchdog>=0.7.0,<0.8.0',
     'PyYAML>=3.10,<3.11',
+    'docker-py>=0.2.3,<0.3.0',
 ]
 
 

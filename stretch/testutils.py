@@ -1,5 +1,6 @@
 import os
-from mock import MagicMock
+from mock import MagicMock, patch
+from django.conf import settings
 
 
 class MockFileSystem(object):
@@ -44,9 +45,13 @@ class MockFileSystem(object):
     def exists(self, path):
         return path in self.files.keys()
 
-    def open(self, path):
+    def open(self, path, mode='r'):
         handle = MagicMock(spec=file)
-        handle.write.return_value = None
+
+        def write(data):
+            self.add_file(path, data)
+
+        handle.write = write
         handle.__enter__.return_value = handle
 
         data = self.files.get(path)
@@ -85,3 +90,31 @@ class MockFileSystem(object):
             else:
                 filenames.append(key)
         yield (path, dirnames, filenames)
+
+
+class patch_settings(object):
+
+    def __init__(self, **kwargs):
+        super(patch_settings, self).__init__()
+        self.marker = object()
+        self.old_settings = {}
+        self.kwargs = kwargs
+
+    def start(self):
+        for setting, new_value in self.kwargs.items():
+            old_value = getattr(settings, setting, self.marker)
+            self.old_settings[setting] = old_value
+            setattr(settings, setting, new_value)
+
+    def stop(self):
+        for setting, old_value in self.old_settings.items():
+            if old_value is self.marker:
+                delattr(settings, setting)
+            else:
+                setattr(settings, setting, old_value)
+
+    def __enter__(self):
+        self.start()
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self.stop()

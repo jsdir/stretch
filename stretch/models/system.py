@@ -1,4 +1,5 @@
 from django.db import models
+from django.conf import settings
 
 from stretch import utils, source
 from stretch.models import AuditedModel, Release
@@ -31,3 +32,8 @@ class System(AuditedModel):
         if not sources:
             raise source.NoSourceException()
         return sources[0]
+
+    @property
+    @utils.memoized
+    def stash_path(self):
+        return settings.STRETCH_STASHES.get(self.name)

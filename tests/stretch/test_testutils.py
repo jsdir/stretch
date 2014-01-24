@@ -45,6 +45,12 @@ class TestMockFileSystem(TestCase):
         self.assertEquals(self.mock_fs.open('/root/folder/f_file').read(),
                           'f_file_source')
 
+    def test_write(self):
+        with self.mock_fs.open('/root/folder/f_file', 'w') as f:
+            f.write('data')
+
+        self.assertEquals(self.mock_fs.files['/root/folder/f_file'], 'data')
+
     def test_walk(self):
         self.assertItemsEqual(list(self.mock_fs.walk('/root/undefined')), [])
         pprint(list(self.mock_fs.walk('/root')))

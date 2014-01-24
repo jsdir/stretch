@@ -1,5 +1,5 @@
 import functools
-from mock import patch
+from mock import Mock, patch, call
 from nose.tools import raises
 from django.test import TestCase
 
@@ -22,7 +22,6 @@ class TestSnapshot(TestCase):
 
     @mock_fs
     def test_requires_root_stretch(self, fs):
-        # TODO: "/stretch.yml"
         with self.assertRaises(snapshot.MissingFileException):
             snap = snapshot.Snapshot('/')
 
@@ -49,14 +48,12 @@ class TestSnapshot(TestCase):
     def test_dockerfiles_required(self, fs):
         # Single-node spec
         fs.add_file('stretch.yml', 'name: node_name')
-        # TODO: Dockerfile
         with self.assertRaises(snapshot.MissingFileException):
             snap = snapshot.Snapshot('/')
 
         # Multi-node spec
         fs.add_file('stretch.yml', 'nodes:\n  node: node')
         fs.add_file('node/stretch.yml')
-        # TODO: Dockerfile
         with self.assertRaises(snapshot.MissingFileException):
             snap = snapshot.Snapshot('/')
 
@@ -90,7 +87,6 @@ class TestSnapshot(TestCase):
         node = snap.nodes[0]
         self.assertEquals(node.name, 'node_name')
 
-
     @mock_fs
     def test_templates_single_node(self, fs):
         fs.add_file('stretch.yml', 'name: node_name')
@@ -121,29 +117,40 @@ class TestSnapshot(TestCase):
 
         self.assertEquals(node.templates_path, '/node/foo/bar')
 
+    @patch('stretch.snapshot.Snapshot.run_task')
+    @patch('stretch.snapshot.docker_client')
     @mock_fs
-    def test_build(self, fs):
-        """
-        fs.add_file('base')
-        fs.add_file('node1')
-        fs.add_file('node2')
+    def test_build(self, fs, docker_client, run_task):
+        fs.add_file('stretch.yml',
+            'before_build: "b"\n\nnodes:\n  node1: node1\n  node2: node2')
+        fs.add_file('node1/Dockerfile', 'source')
+        fs.add_file('node1/container.yml', 'from: ../base/image')
+        fs.add_file('node2/Dockerfile', 'source')
+        fs.add_file('node2/container.yml', 'from: ../base/image')
+        fs.add_file('node2/stretch.yml', 'after_build: "a"')
+        fs.add_file('base/image/Dockerfile', 'source')
 
-        build()
-        #assert command called with before_build in correct dir
+        client = Mock()
+        client.build.return_value = ['logs', 'Successfully built abc123']
+        client.push.return_value = []
+        docker_client.return_value = client
 
-        # then
+        release = Mock()
+        release.pk = 4
 
-        build.calls[0] == call(base)
-        #assert build.calls[1] == call(node2) and build.calls[2] = call(node1) or
-        #build.calls[1] = call(node1) and build.calls[2] = call(node2)
+        with testutils.patch_settings(STRETCH_REGISTRY='reg'):
+            snap = snapshot.Snapshot('/')
+            snap.build(release, {'node1': 1, 'node2': 2})
 
-        fs.add_file('base')
-        fs.add_file('base < node1')
-        fs.add_file('base < node1 < node2')
+        run_task.assert_has_calls([
+            call('before_build', release),
+            call('after_build', release)
+        ])
 
-        build.assert_has_calls([call(base, 'dockerfilecontent'), call(node1), call(node2)])
-
-        # then
-
-        #assert command called with before_deploy in correct dir
-        """
+        self.assertEquals(fs.open('/node1/Dockerfile').read(),
+            'FROM abc123\nsource'
+        )
+        self.assertEquals(fs.open('/node2/Dockerfile').read(),
+            'FROM abc123\nsource'
+        )
+        self.assertEquals(fs.open('/base/image/Dockerfile').read(), 'source')
