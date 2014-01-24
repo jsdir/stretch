@@ -92,7 +92,8 @@ class Snapshot(object):
         self.run_task('after_build', release)
 
     def run_task(self, task, release):
-        [node.run_task(task, release) for node in self.nodes]
+        run_task(self, task, release)
+        [run_task(node, task, release) for node in self.nodes]
 
     def clean_up(self):
         utils.delete_dir(self.path)
@@ -132,28 +133,6 @@ class Node(object):
 
         # Get container
         self.container = Container(self.path, [], self)
-
-    def run_task(self, task, release):
-        if task in (
-            'before_build', 'after_build',
-            'before_deploy', 'after_deploy',
-            'before_rollback', 'after_rollback'
-        ):
-            command = self.stretch_data.get(task)
-            if command:
-                log.info('Executing "%s" task in "%s"...' % (task, self.path))
-                self.execute_command(command, release)
-                log.info('Finished executing "%s" task.' % task)
-
-    def execute_command(self, command, release):
-        env = os.environ.copy()
-        env['STRETCH_RELEASE_ID'] = str(release.pk)
-        env['STRETCH_RELEASE_TAG'] = release.tag
-        env['STRETCH_RELEASE_NAME'] = release.name
-        env['STRETCH_STASH_PATH'] = release.system.stash_path
-
-        cmd = 'cd %s && %s' % (self.path, command)
-        utils.run(cmd, env=env, shell=True)
 
 
 class Container(object):
@@ -255,6 +234,31 @@ class UndefinedParamException(Exception):  # pragma: no cover
         )
 
 
+def run_task(obj, task, release):
+    if task in (
+        'before_build', 'after_build',
+        'before_deploy', 'after_deploy',
+        'before_rollback', 'after_rollback'
+    ):
+        command = obj.stretch_data.get(task)
+        if command:
+            log.info('Executing "%s" task in "%s"...' % (task, obj.path))
+            log.info(' - %s' % command)
+            execute_command(command, release, obj.path)
+            log.info('Finished executing "%s" task.' % task)
+
+
+def execute_command(command, release, path):
+        env = os.environ.copy()
+        env['STRETCH_RELEASE_ID'] = str(release.pk)
+        env['STRETCH_RELEASE_TAG'] = release.tag
+        env['STRETCH_RELEASE_NAME'] = release.name
+        env['STRETCH_STASH_PATH'] = release.system.stash_path
+
+        cmd = 'cd %s && %s' % (path, command)
+        utils.run(cmd, env=env, shell=True)
+
+
 def get_build_files(path, required_files=[]):
     """
     Return all build files in a path.
@@ -279,4 +283,4 @@ def get_data(path):
 @utils.memoized
 def docker_client():
     return docker.Client(base_url='unix://var/run/docker.sock',
-                         version='1.6', timeout=10)
+                         version='1.6', timeout=60)

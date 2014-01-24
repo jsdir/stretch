@@ -117,10 +117,11 @@ class TestSnapshot(TestCase):
 
         self.assertEquals(node.templates_path, '/node/foo/bar')
 
-    @patch('stretch.snapshot.Snapshot.run_task')
+    @patch('stretch.snapshot.os.environ', {})
+    @patch('stretch.snapshot.utils.run')
     @patch('stretch.snapshot.docker_client')
     @mock_fs
-    def test_build(self, fs, docker_client, run_task):
+    def test_build(self, fs, docker_client, run):
         fs.add_file('stretch.yml',
             'before_build: "b"\n\nnodes:\n  node1: node1\n  node2: node2')
         fs.add_file('node1/Dockerfile', 'source')
@@ -137,14 +138,24 @@ class TestSnapshot(TestCase):
 
         release = Mock()
         release.pk = 4
+        release.tag = 'tag'
+        release.name = 'name'
+        release.system.stash_path = '/stash.conf'
 
         with testutils.patch_settings(STRETCH_REGISTRY='reg'):
             snap = snapshot.Snapshot('/')
             snap.build(release, {'node1': 1, 'node2': 2})
 
-        run_task.assert_has_calls([
-            call('before_build', release),
-            call('after_build', release)
+        env = {
+            'STRETCH_STASH_PATH': '/stash.conf',
+            'STRETCH_RELEASE_TAG': 'tag',
+            'STRETCH_RELEASE_ID': '4',
+            'STRETCH_RELEASE_NAME': 'name'
+        }
+
+        run.assert_has_calls([
+            call('cd / && b', shell=True, env=env),
+            call('cd /node2 && a', shell=True, env=env)
         ])
 
         self.assertEquals(fs.open('/node1/Dockerfile').read(),
