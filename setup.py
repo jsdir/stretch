@@ -31,7 +31,6 @@ dependency_links = [
     'https://github.com/dotcloud/docker-py/archive/236bb5f09e967880e60fd539feb7b325c482d2fd.zip#egg=docker-py-0.2.4'
 ]
 
-
 setup(
     name='stretch',
     version='0.1.0',
