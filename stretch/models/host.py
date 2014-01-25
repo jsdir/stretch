@@ -27,6 +27,14 @@ class Host(AuditedModel):
     environment = models.ForeignKey('Environment', related_name='hosts')
     #address = models.GenericIPAddressField()
 
+    @classmethod
+    def create(cls, a):
+        pass
+
+    @classmethod
+    def create_unmanaged(cls, a):
+        pass
+
     def restart_instances(self, groups):
         log.info('Restarting instances for Host[%s]...' % self.pk)
         restart_tasks = []

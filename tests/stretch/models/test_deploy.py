@@ -57,7 +57,7 @@ class TestDeploy(TestCase):
         # Object assertions
         self.assertEquals(deploy.task_id, 'task-id')
 
-        # Snapshot assertions
+        # Snapshot/task assertions
         snapshot.run_task.assert_has_calls([call('before_deploy', release),
                                             call('after_deploy', release)])
         snapshot.build.assert_called_with(release, {'node1': 1, 'node2': 2})

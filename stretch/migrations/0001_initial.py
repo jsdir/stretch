@@ -56,6 +56,7 @@ class Migration(SchemaMigration):
             ('created_at', self.gf('django.db.models.fields.DateTimeField')(auto_now_add=True, null=True, blank=True)),
             ('updated_at', self.gf('django.db.models.fields.DateTimeField')(auto_now=True, null=True, blank=True)),
             ('name', self.gf('django.db.models.fields.TextField')(unique=True)),
+            ('group', self.gf('django.db.models.fields.related.ForeignKey')(related_name='hosts', null=True, to=orm['stretch.Group'])),
             ('environment', self.gf('django.db.models.fields.related.ForeignKey')(related_name='hosts', to=orm['stretch.Environment'])),
         ))
         db.send_create_signal('stretch', ['Host'])
@@ -187,6 +188,7 @@ class Migration(SchemaMigration):
             'Meta': {'unique_together': "(('environment', 'name'),)", 'object_name': 'Host'},
             'created_at': ('django.db.models.fields.DateTimeField', [], {'auto_now_add': 'True', 'null': 'True', 'blank': 'True'}),
             'environment': ('django.db.models.fields.related.ForeignKey', [], {'related_name': "'hosts'", 'to': "orm['stretch.Environment']"}),
+            'group': ('django.db.models.fields.related.ForeignKey', [], {'related_name': "'hosts'", 'null': 'True', 'to': "orm['stretch.Group']"}),
             u'id': ('django.db.models.fields.AutoField', [], {'primary_key': 'True'}),
             'name': ('django.db.models.fields.TextField', [], {'unique': 'True'}),
             'updated_at': ('django.db.models.fields.DateTimeField', [], {'auto_now': 'True', 'null': 'True', 'blank': 'True'})
