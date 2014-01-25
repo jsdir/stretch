@@ -8,12 +8,13 @@ import distutils
 import subprocess
 import collections
 import cPickle
+from twisted.internet import task, defer
 
 
 log = logging.getLogger(__name__)
 
 
-#-#-#-#- Decorators -#-#-#-#
+#-#-#-#- Functions -#-#-#-#
 
 class memoized(object):
     """
@@ -30,6 +31,20 @@ class memoized(object):
         if not self.cache.has_key(key):
             self.cache[key] = self.func(*args, **kwargs)
         return self.cache[key]
+
+
+def deferred_batch_map(items, func, batch_size):
+    c = task.Cooperator()
+
+    def get_tasks():
+        for item in items:
+            yield func(item)
+
+    tasks = get_tasks()
+
+    return defer.DeferredList([
+        c.coiterate(tasks) for _ in xrange(batch_size)
+    ])
 
 
 #-#-#-#- Files -#-#-#-#
@@ -54,7 +69,7 @@ def temp_dir(path=None):
     temporary directory.
     """
     # Create temporary directory in case it doesn't exist.
-    mkdir(settings.STRETCH_TEMP_DIR)
+    make_dir(settings.STRETCH_TEMP_DIR)
 
     dest = tempfile.mkdtemp(prefix='%s/' % settings.STRETCH_TEMP_DIR)
     if path:

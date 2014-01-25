@@ -4,6 +4,7 @@ from stretch.models.deploy import Deploy
 from stretch.models.environment import Environment
 from stretch.models.group import Group
 from stretch.models.host import Host
+from stretch.models.instance import Instance
 from stretch.models.node import Node
 from stretch.models.release import Release
 from stretch.models.system import System
@@ -15,6 +16,7 @@ __all__ = [
     'Environment',
     'Group',
     'Host',
+    'Instance',
     'Node',
     'Release',
     'System',

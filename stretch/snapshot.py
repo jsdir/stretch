@@ -5,6 +5,7 @@ import yaml
 import docker
 import tarfile
 import logging
+from contextlib import contextmanager
 from django.conf import settings
 
 from stretch import utils
@@ -22,6 +23,16 @@ class Snapshot(object):
         self.nodes = []
         self.config = {}
         self.parse()
+
+    @classmethod
+    @contextmanager
+    def create_from_archive(cls, path):
+        snapshot_dir = utils.temp_dir()
+        tar_file = tarfile.open(path)
+        tar_file.extract_all(snapshot_dir)
+        tar_file.close()
+        yield cls(snapshot_dir)
+        utils.delete_dir(snapshot_dir)
 
     def parse(self):
         log.info('Parsing "%s"...' % self.path)
@@ -65,10 +76,6 @@ class Snapshot(object):
         tar_file = tarfile.open(release.archive_path, 'w:gz')
         tar_file.add(self.path, '/')
         tar_file.close()
-
-        # Build images
-        self.build(release)
-        snapshot.build_and_push(release)
 
         # Delete snapshot buffer
         self.clean_up()

@@ -35,17 +35,19 @@ class Release(AuditedModel):
         """
         release = cls(
             name=utils.generate_memorable_name(),
-            tag=tag,
+            tag=tag or utlis.generate_random_hex(8),
             system=system
         )
 
         # Create snapshot
         snapshot = Snapshot(path)
+
         # Build release from snapshot
         snapshot.archive(release)
+
         # Build finished
         release.save()
-        # signals.release_created.send(sender=release)
+
         return release
 
     @property
@@ -55,3 +57,6 @@ class Release(AuditedModel):
         """
         return os.path.join(settings.STRETCH_DATA_DIR, 'releases',
                             str(self.pk), 'snapshot.tar.gz')
+
+    def get_snapshot(self):
+        return Snapshot.create_from_archive(self.archive_path)

@@ -24,6 +24,8 @@ install_requires = [
     'watchdog>=0.7.0,<0.8.0',
     'PyYAML>=3.10,<3.11',
     'docker-py>=0.2.3,<0.3.0',
+    'crochet>=1.0.0,<1.1.0',
+    'django-uuidfield',
 ]
 
 # TODO: Get the package from GitHub until stream handling is fixed in 0.2.4

@@ -3,7 +3,7 @@ import sys
 
 # Django settings for stretch project.
 
-DEBUG = True
+DEBUG = False
 TEMPLATE_DEBUG = DEBUG
 
 ADMINS = (
@@ -162,7 +162,12 @@ LOGGING = {
             'maxBytes': 50000,
             'backupCount': 2,
             'formatter': 'standard',
-        }
+        },
+        'console': {
+            'level': 'DEBUG',
+            'class': 'logging.StreamHandler',
+            'formatter': 'standard'
+        },
     },
     'loggers': {
         'django.request': {
@@ -171,7 +176,7 @@ LOGGING = {
             'propagate': True,
         },
         '': {
-            'handlers': ['logfile'],
+            'handlers': ['logfile', 'console'],
             'level': 'DEBUG',
             'propagate': True,
         },
@@ -179,6 +184,9 @@ LOGGING = {
 }
 
 # Stretch-specific settings
+
+## Application
+STRETCH_DEPLOY_BATCH_SIZE = 5
 
 ## Paths
 STRETCH_CACHE_DIR = '/var/cache/stretch'
@@ -196,7 +204,9 @@ except ImportError:
     pass
 
 DATABASES['default'] = {'ENGINE': 'django.db.backends.sqlite3'}
+
 # Test settings
+
 if 'test' in sys.argv or 'test_coverage' in sys.argv:
     DATABASES['default'] = {'ENGINE': 'django.db.backends.sqlite3'}
     LOGGING = {}

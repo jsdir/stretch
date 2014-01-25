@@ -1,9 +1,11 @@
 from mock import Mock, patch
 from nose.tools import raises
 from django.test import TestCase
+from django.test.utils import override_settings
+
 
 from stretch.models import System
-from stretch import source, testutils
+from stretch import source
 
 
 class TestSystem(TestCase):
@@ -21,7 +23,7 @@ class TestSystem(TestCase):
         get_sources.return_value = []
         system.source
 
+    @override_settings(STRETCH_STASHES={'sys3': '/stash'})
     def test_stash_path(self):
-        with testutils.patch_settings(STRETCH_STASHES={'sys3': '/stash'}):
-            system = System(name='sys3')
-            self.assertEquals(system.stash_path, '/stash')
+        system = System(name='sys3')
+        self.assertEquals(system.stash_path, '/stash')

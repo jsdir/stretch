@@ -1,7 +1,7 @@
 from unittest import TestCase
 
 from stretch import testutils
-from pprint import pprint
+
 
 class TestMockFileSystem(TestCase):
     def setUp(self):
@@ -53,7 +53,6 @@ class TestMockFileSystem(TestCase):
 
     def test_walk(self):
         self.assertItemsEqual(list(self.mock_fs.walk('/root/undefined')), [])
-        pprint(list(self.mock_fs.walk('/root')))
         self.assertItemsEqual(list(self.mock_fs.walk('/root')), [
             ('/root/other_folder', [], ['f_file']),
             ('/root/empty_folder', [], []),

@@ -4,6 +4,11 @@ from fabric.api import local, lcd, hide, env
 local_dir = os.path.dirname(os.path.realpath(__file__))
 
 
+def celery():
+    with lcd(local_dir):
+        local('celery -A stretch worker -l info')
+
+
 def test():
     with hide('status', 'aborts'):
         with lcd(local_dir):

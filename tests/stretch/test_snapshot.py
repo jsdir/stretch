@@ -2,6 +2,8 @@ import functools
 from mock import Mock, patch, call
 from nose.tools import raises
 from django.test import TestCase
+from django.test.utils import override_settings
+
 
 from stretch import snapshot, testutils
 
@@ -142,7 +144,7 @@ class TestSnapshot(TestCase):
         release.name = 'name'
         release.system.stash_path = '/stash.conf'
 
-        with testutils.patch_settings(STRETCH_REGISTRY='reg'):
+        with override_settings(STRETCH_REGISTRY='reg'):
             snap = snapshot.Snapshot('/')
             snap.build(release, {'node1': 1, 'node2': 2})
 
