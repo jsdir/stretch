@@ -39,19 +39,19 @@ $ stretch create release the_source
 ```
 
 
-###delete
+###destroy
 
-Delete objects
+Destroy objects
 
 ```sh
-# Delete a system...
-$ stretch delete system [system]
+# Destroy a system...
+$ stretch destroy system [system]
 
-# Delete an environment...
-$ stretch delete environment [system]/[environment]
+# Destroy an environment...
+$ stretch destroy environment [system]/[environment]
 
-# Delete a group...
-$ stretch delete group [system]/[environment]/[group]
+# Destroy a group...
+$ stretch destroy group [system]/[environment]/[group]
 ```
 
 ###deploy
@@ -202,3 +202,8 @@ $ stretch ls sys1/production/web
     - 132.53.3.156
     - 132.53.3.157
 ```
+
+
+Notes
+-----
+- Routing group is created and destroyed alongside the group it routes to. It is virtually invisible to the client except when it is scaled.
