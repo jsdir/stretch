@@ -1,7 +1,7 @@
 """
 stretch
 
-Usage: stretch [--version] [--config=<path>] <command> [<args>...]
+Usage: stretch [--version] [--debug] [--config=<path>] <command> [<args>...]
 
 Options:
    -h,  --help
@@ -16,9 +16,15 @@ The most commonly used stretch commands are:
 See 'stretch <command> help' for more information on a specific command.
 
 """
+import os
 import sys
-import stretch
+import logging
 from docopt import docopt, DocoptExit
+
+import stretch
+from stretch import config, objects
+
+log = logging.getLogger(__name__)
 
 
 class Cli(object):
@@ -49,11 +55,16 @@ class Cli(object):
                 args['<amount>']
             )
         elif args['release']:
-            objects.create_release(
-                args['source_name'],
-                args['<option>=<val>'],
+            options = {}
+            for option in args['<option>=<val>']:
+                fragments = option.split('=')
+                options[fragments[0]] = '='.join(fragments[1:])
+
+            print(objects.create_release(
+                args['<source_name>'],
+                options,
                 args['--id']
-            )
+            ))
 
     def destroy(self, args):
         """
@@ -157,7 +168,20 @@ def trim(docstring):
     return '\n'.join(trimmed)
 
 
+def start_logging():
+    console_handler = logging.StreamHandler(stream=sys.stderr)
+    console_handler.setFormatter(logging.Formatter(
+        '%(asctime)s [%(levelname)s] %(name)s: %(message)s'
+    ))
+    console_handler.setLevel(logging.DEBUG)
+    root_logger = logging.getLogger()
+    root_logger.addHandler(console_handler)
+    root_logger.setLevel(logging.DEBUG)
+
+
 def main():
+    start_logging()
+
     cli = Cli()
     args = docopt(__doc__, version='stretch %s' % stretch.__version__,
                   options_first=True)
@@ -165,8 +189,12 @@ def main():
     cmd = args['<command>']
 
     if args['--config']:
-        print "Using config: %s" % args['--config']
-        # Also use env variable
+        config.set_config_file(args['--config'])
+    elif os.environ.get('STRETCH_CONFIG'):
+        config.set_config_file(os.environ.get('STRETCH_CONFIG'))
+
+    if args['--debug']:
+        log.setLevel(logging.DEBUG)
 
     if cmd == 'help':
         docopt(__doc__, argv=['--help'])

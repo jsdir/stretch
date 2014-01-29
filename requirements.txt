@@ -3,3 +3,6 @@ PyYAML>=3.10,<3.11
 docker-py>=0.2.3,<0.3.0
 crochet>=1.0.0,<1.1.0
 docopt==0.6.1
+peewee==2.1.7
+watchdog>=0.7.0,<0.8.0
+twisted>=13.2.0,<13.2.9
