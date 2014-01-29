@@ -29,9 +29,7 @@ class Extension(object):
                                              % (cls.name, name))
 
                 # Attempt to load the extension.
-                print cls.__subclasses__()
                 for subclass in cls.__subclasses__():
-                    print subclass
                     if subclass.name == extension_type:
                         return subclass(data.get('options', {}))
 

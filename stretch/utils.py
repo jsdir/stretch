@@ -1,5 +1,6 @@
 import os
 import errno
+import yaml
 import random
 import inspect
 import shutil
@@ -10,6 +11,8 @@ import subprocess
 import collections
 import cPickle
 from twisted.internet import task, defer
+
+import stretch
 
 log = logging.getLogger(__name__)
 
@@ -69,10 +72,10 @@ def temp_dir(path=None):
     temporary directory.
     """
     # Create temporary directory in case it doesn't exist.
-    from stretch import config
-    make_dir(config.get_config()['temp_dir'])
+    tmp_dir = stretch.config.get_config()['temp_dir']
+    make_dir(tmp_dir)
 
-    dest = tempfile.mkdtemp(prefix='%s/' % config.get_config()['temp_dir'])
+    dest = tempfile.mkdtemp(prefix='%s/' % tmp_dir)
     if path:
         copy_dir(path, dest)
     return dest
@@ -87,6 +90,10 @@ def copy_dir(path, dest):
 
 def delete_dir(path):
     shutil.rmtree(path)
+
+
+def yaml_load(path):
+    return yaml.load(open(path).read()) or {}
 
 
 #-#-#-#- Dictionaries -#-#-#-#
@@ -108,7 +115,6 @@ def merge(original, new):
 
 def run(cmd, env={}, raise_errors=True, shell=False):
     log.debug('Running: %s' % cmd)
-    log.debug('Environment: %s' % env)
     pipe = subprocess.PIPE
     p = subprocess.Popen(cmd, stdout=pipe, stderr=pipe, shell=shell, env=env)
 

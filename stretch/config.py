@@ -31,7 +31,7 @@ class ConfigException(Exception): pass
 
 def set_config_file(config_file):
     config['config'] = defaults
-    utils.merge(config['config'], yaml.load(open(config_file, 'r')))
+    utils.merge(config['config'], utils.yaml_load(config_file))
     for key in required_keys:
         if key not in config['config']:
             raise ConfigException('key "%s" is required in config.yml' % key)

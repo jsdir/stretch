@@ -62,11 +62,11 @@ class Cli(object):
                 fragments = option.split('=')
                 options[fragments[0]] = '='.join(fragments[1:])
 
-            print(objects.create_release(
+            print objects.create_release(
                 args['<source_name>'],
                 options,
                 args['--id']
-            ))
+            )
 
     def destroy(self, args):
         """

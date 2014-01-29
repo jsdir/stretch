@@ -21,7 +21,6 @@ class Release(Model):
 
 @utils.memoized
 def get_db():
-    print config.get_config()['database_path']
     db = SqliteDatabase(config.get_config()['database_path'])
     if not Release.table_exists():
         Release.create_table()
@@ -33,6 +32,8 @@ def get_archive_path(release_id):
 
 
 def create_release(source_name, options, release_id):
+    log.info('Creating release...')
+
     conf = config.get_config()
     db = get_db()
 
