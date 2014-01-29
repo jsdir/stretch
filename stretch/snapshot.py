@@ -6,7 +6,6 @@ import docker
 import tarfile
 import logging
 from contextlib import contextmanager
-#from django.conf import settings
 
 from stretch import utils
 
@@ -255,13 +254,12 @@ def run_task(obj, task, release):
 
 
 def execute_command(command, release, path):
-        env = os.environ.copy()
-        env['STRETCH_RELEASE_ID'] = str(release.pk)
-        env['STRETCH_RELEASE_NAME'] = release.name
-        env['STRETCH_STASH_PATH'] = release.system.stash_path
+    env = os.environ.copy()
+    env['STRETCH_RELEASE_ID'] = release.release_id
+    env['STRETCH_RELEASE_NAME'] = release.name
 
-        cmd = 'cd %s && %s' % (path, command)
-        utils.run(cmd, env=env, shell=True)
+    cmd = 'cd %s && %s' % (path, command)
+    utils.run(cmd, env=env, shell=True)
 
 
 def get_build_files(path, required_files=[]):

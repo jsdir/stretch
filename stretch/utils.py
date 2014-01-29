@@ -107,6 +107,8 @@ def merge(original, new):
 #-#-#-#- System -#-#-#-#
 
 def run(cmd, env={}, raise_errors=True, shell=False):
+    log.debug('Running: %s' % cmd)
+    log.debug('Environment: %s' % env)
     pipe = subprocess.PIPE
     p = subprocess.Popen(cmd, stdout=pipe, stderr=pipe, shell=shell, env=env)
 

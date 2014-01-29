@@ -1,10 +1,12 @@
 """
 stretch
 
-Usage: stretch [--version] [--debug] [--config=<path>] <command> [<args>...]
+Usage: stretch [--version] [--debug] [--config=<path>] [options]
+               <command> [<args>...]
 
 Options:
-   -h,  --help
+   -h, --help
+   -l <log_level>, --log-level=<log_level>
 
 The most commonly used stretch commands are:
    create     Create an object
@@ -168,19 +170,21 @@ def trim(docstring):
     return '\n'.join(trimmed)
 
 
-def start_logging():
+def start_logger():
     console_handler = logging.StreamHandler(stream=sys.stderr)
     console_handler.setFormatter(logging.Formatter(
         '%(asctime)s [%(levelname)s] %(name)s: %(message)s'
     ))
-    console_handler.setLevel(logging.DEBUG)
+    console_handler.setLevel(logging.WARNING)
     root_logger = logging.getLogger()
     root_logger.addHandler(console_handler)
     root_logger.setLevel(logging.DEBUG)
 
+    return console_handler
+
 
 def main():
-    start_logging()
+    console_handler = start_logger()
 
     cli = Cli()
     args = docopt(__doc__, version='stretch %s' % stretch.__version__,
@@ -193,8 +197,16 @@ def main():
     elif os.environ.get('STRETCH_CONFIG'):
         config.set_config_file(os.environ.get('STRETCH_CONFIG'))
 
-    if args['--debug']:
-        log.setLevel(logging.DEBUG)
+    if args['--log-level'] == 'debug':
+        console_handler.setLevel(logging.DEBUG)
+    elif args['--log-level'] == 'info':
+        console_handler.setLevel(logging.INFO)
+    elif args['--log-level'] == 'warning':
+        console_handler.setLevel(logging.WARNING)
+    elif args['--log-level'] == 'error':
+        console_handler.setLevel(logging.ERROR)
+    elif args['--log-level'] == 'critical':
+        console_handler.setLevel(logging.CRITICAL)
 
     if cmd == 'help':
         docopt(__doc__, argv=['--help'])
