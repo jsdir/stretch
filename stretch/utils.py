@@ -115,13 +115,13 @@ def merge(original, new):
 
 def run(cmd, env={}, raise_errors=True, shell=False):
     log.debug('Running: %s' % cmd)
-    pipe = subprocess.PIPE
-    p = subprocess.Popen(cmd, stdout=pipe, stderr=pipe, shell=shell, env=env)
+    #pipe = subprocess.PIPE
+    p = subprocess.Popen(cmd, shell=shell, env=env)
 
     output = ''
-    for line in p.stdout:
-        log.info(line)
-        output += line
+    #for line in p.stdout:
+    #    log.info(line)
+    #    output += line
 
     stdout, stderr = p.communicate()
     if p.returncode != 0 and raise_errors:

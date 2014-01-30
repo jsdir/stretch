@@ -30,7 +30,6 @@ log = logging.getLogger(__name__)
 
 
 class Cli(object):
-
     def create(self, args):
         """
         stretch create
@@ -88,10 +87,7 @@ class Cli(object):
         The release_identifier can either be an id or a name.
 
         """
-        objects.deploy(
-            args['<release_identifier>'],
-            args['<environment>']
-        )
+        objects.deploy(args['<release_identifier>'], args['<environment>'])
 
     def scale(self, args):
         """
@@ -131,11 +127,11 @@ class Cli(object):
 
         """
         if args['--releases']:
-            print "Show all releases"
+            objects.list_releases()
         elif args['--systems']:
-            print "Show all systems"
+            list_systems()
         else:
-            print "Showing %s" % args['<object_path>']
+            list_children_of(get_object(args['<object_path>']))
 
 
 def trim(docstring):
@@ -172,10 +168,7 @@ def trim(docstring):
 
 def start_logger():
     console_handler = logging.StreamHandler(stream=sys.stderr)
-    console_handler.setFormatter(logging.Formatter(
-        '%(asctime)s [%(levelname)s] %(name)s: %(message)s'
-    ))
-    console_handler.setLevel(logging.WARNING)
+    console_handler.setLevel(logging.INFO)
     root_logger = logging.getLogger()
     root_logger.addHandler(console_handler)
     root_logger.setLevel(logging.DEBUG)
@@ -207,6 +200,10 @@ def main():
         console_handler.setLevel(logging.ERROR)
     elif args['--log-level'] == 'critical':
         console_handler.setLevel(logging.CRITICAL)
+
+    if args['--log-level']:
+        format = '%(asctime)s [%(levelname)s] %(name)s: %(message)s'
+        console_handler.setFormatter(logging.Formatter(format))
 
     if cmd == 'help':
         docopt(__doc__, argv=['--help'])

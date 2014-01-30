@@ -12,7 +12,6 @@ log = logging.getLogger(__name__)
 
 
 class Snapshot(object):
-
     def __init__(self, path):
         self.path = path
         self.nodes = []
@@ -22,6 +21,7 @@ class Snapshot(object):
     @classmethod
     @contextmanager
     def create_from_archive(cls, path):
+        log.debug('Creating snapshot from archive %s' % path)
         snapshot_dir = utils.temp_dir()
         try:
             tar_file = tarfile.open(path)
@@ -69,7 +69,7 @@ class Snapshot(object):
     def build(self, release):
         # TODO: Run multiple builds simultaneously
 
-        #self.run_task('before_build', release)
+        self.run_task('before_build', release)
 
         containers = dict([
             (node.name, node.container.build(release)) for node in self.nodes
@@ -84,7 +84,6 @@ class Snapshot(object):
 
 
 class Node(object):
-
     def __init__(self, path, snapshot, name):
         self.path = path
         self.name = name
@@ -120,7 +119,6 @@ class Node(object):
 
 
 class Container(object):
-
     def __init__(self, path, child_paths, node, tag=None):
         self.path = path
         self.container = None
@@ -178,8 +176,10 @@ class Container(object):
         output = ''
         for ln in client.build(self.path, tag=self.tag, rm=True, stream=True):
             # Log the build process
-            log.debug(ln.replace('\n', ''))
-            output += ln
+            text = ln.replace('\n', '')
+            if text:
+                print text
+                output += text
 
         conatainer_id = None
 

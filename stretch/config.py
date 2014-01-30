@@ -1,5 +1,6 @@
 import yaml
 
+import stretch
 from stretch import exceptions, utils
 
 config = {'config': None}
@@ -35,6 +36,9 @@ def set_config_file(config_file):
     for key in required_keys:
         if key not in config['config']:
             raise ConfigException('key "%s" is required in config.yml' % key)
+    stretch.objects.db.init(get_config()['database_path'])
+    if not stretch.objects.Release.table_exists():
+        stretch.objects.Release.create_table()
 
 
 def get_config():
