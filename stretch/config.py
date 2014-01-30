@@ -1,7 +1,7 @@
 import yaml
 
 import stretch
-from stretch import exceptions, utils
+from stretch import utils
 
 config = {'config': None}
 defaults = {
