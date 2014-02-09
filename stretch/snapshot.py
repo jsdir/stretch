@@ -71,6 +71,12 @@ class Snapshot(object):
 
         self.run_task('before_build', release)
 
+        # TODO: Reset timestamps until caching issue resolved.
+        # https://github.com/dotcloud/docker/issues/3556
+        log.info('Normalizing timestamps...')
+        cmd = 'find %s -exec touch -t 200001010000.00 {} ";"' % self.path
+        utils.run(cmd, shell=True)
+
         containers = dict([
             (node.name, node.container.build(release)) for node in self.nodes
         ])

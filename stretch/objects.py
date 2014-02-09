@@ -74,12 +74,6 @@ def create_release(source_name, options, release_id):
 
     # Build the release
     with Snapshot.create_from_archive(archive_path) as snapshot:
-        # TODO: Reset timestamps until caching issue resolved.
-        # https://github.com/dotcloud/docker/issues/3556
-        log.info('Normalizing timestamps...')
-        utils.run(cmd, shell=True)
-        cmd = 'find %s -exec touch -t 200001010000.00 {} ";"' % snapshot.path
-
         containers = snapshot.build(release)
 
     log.info("Built containers: %s" % json.dumps(containers, indent=4))
