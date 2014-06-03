@@ -1,0 +1,227 @@
+backend: rackspace-coreos
+
+cd logstash-dockerfile && mkdir certs && cd certs
+openssl req -x509 -batch -nodes -newkey rsa:2048 -keyout logstash-forwarder.key -out logstash-forwarder.crt
+
+
+
+# Create the CA Key and Certificate for signing Client Certs
+openssl genrsa -des3 -out ca.key 4096
+openssl rsa -in ca.key -out ca.key # remove password!
+openssl req -new -x509 -days 3650 -key ca.key -out ca.crt
+
+# Create the Server Key, CSR, and Certificate
+openssl genrsa -des3 -out server.key 1024
+openssl rsa -in server.key -out server.key # remove password!
+openssl req -new -key server.key -out server.csr
+
+# We're self signing our own server cert here.  This is a no-no in production.
+openssl x509 -req -days 3650 -in server.csr -CA ca.crt -CAkey ca.key -set_serial 01 -out server.crt
+
+# Create the Client Key and CSR
+openssl genrsa -des3 -out client.key 1024
+openssl rsa -in client.key -out client.key # no password!
+
+openssl req -new -key client.key -out client.csr
+
+# Sign the client certificate with our CA cert.  Unlike signing our own server cert, this is what we want to do.
+openssl x509 -req -days 3650 -in client.csr -CA ca.crt -CAkey ca.key -set_serial 01 -out client.crt
+
+
+
+
+
+
+
+files in containers?
+# the same ambassador will be used
+# etcd is a first level dependency
+# if it has endpoints, it needs etcd
+# etcd ambassador doesn't have to be used for coreos. but it could help in an
+# testing environment and you don't want conditional addresses in your code. network portability
+
+config:
+  key: value
+
+
+containers:
+
+  # Application
+  web:
+    source: "https://dev.pictalk.com/pictalk/web.git#develop"
+    endpoints: # is basically the LINK of the network
+      - twemproxy
+      - service:elasticsearch
+      - service:cassandra
+      - container:sentry
+
+  # Utilities
+  etcd-amb: https://github.com/gatoralli/etcd-amb.git # Used to point to coreos
+    machine-container: true # Only one is needed per machine
+    cmd: "172.17.42.1:4001" # We're running on CoreOS so yeah...
+    # Make an etcd ambassador/ required for each machine (if using endpoints) bound to every server/recipient of endpoint data...
+    # Well clients in the conatiners make want to access the whole cloud. Have an option to determine what gets transferred. At least,
+    # the holders and users of endpoints need to be included. At most everything.
+
+  collectd-statsd: https://github.com/gatoralli/docker-collectd-network.git # forwards to any statsd
+    # This accepts env vars as well as etcdstyle references. the references should never be hardcoded
+    # into the container. Just pass an etcd key to watch. Patterns. Patterns everywhere.
+    endpoints: # Keep the keys like this, they provide flexibility
+      - statsd-cluster #(Service name or container name)
+
+  # Proxy
+  rackspace-dns-presence: https://github.com/gatoralli/rackspace-dns-presence.git
+
+  varnish: docker-varnish
+    requires:
+      - nginx # put your ambassadors here.
+    config_root: /config/something/orother # or a global config root. this could be an override of an implied tree. this is an override
+
+  nginx: https://github.com/gatoralli/docker-nginx.git
+    requires:
+      - hipache-etcd
+      - etcd-amb # (ETCD_AMB_1)
+      name: etcd-amb # name the link, no two link names can be the same
+      - etcd-amb # repeat if you want multiple instances # (ETCD_AMB_2)
+
+  hipache-etcd: https://github.com/ortoo/hipache-etcd.git
+    requires:
+      - redis # private redis instance for high availability
+    endpoints:
+      - service:web
+
+  # Logging
+  # Both of these use the same image because of common dependency
+  logstash-forwarder: https://github.com/denibertovic/logstash-forwarder-dockerfile.git
+    endpoints:
+      - service:twemproxy
+
+  # containers are linked with volumes from forwarder and pipe to /tmp/log/container
+  logstash-indexer: https://github.com/denibertovic/logstash-forwarder-dockerfile.git
+    endpoints:
+      - service:elasticsearch
+      - service:twemproxy
+
+  # Events
+  statsd-cluster:
+    endpoints:
+      - service:statsd
+
+  statsd:
+    endpoints:
+      - instance:instance_id(graphite)
+
+  # we NEED statsd, with collectd and application clients.
+  #Application & Business Metrics - Tracked by StatsD
+  #Infrastructure Metrics - Tracked by CollectD
+  # Both are pushed to Statsd Cluster Proxy [2 or more]
+  # Both are pushed to Statsd [pushes to graphite]
+"polvi/docker-reg heartbeats docker state to etcd at a given location"
+  # Data
+  cassandra: are
+    requires:
+      - etcd-amb
+    endpoints:
+      - db->cassandra #for seeding, and counting
+      # or we can use an injected env variable that gives the current containers, service etcd key for every image
+  hadoop: hm
+    # Hadoop is special because only one in a datacenter will have an extra hive, pig mapreduce client
+    # with jobtracker. somehow, compiling this yml needs to save files with that spec.
+    # We might not even need etcd awareness when we can just link to a cassandra instance.
+    #links:
+    #  - etcd-amb
+    #endpoints:
+    #  - all cassandra
+
+
+  elasticsearch:
+    source: "https://dev.github.com/what.fs"
+    requires:
+      - etcd-amb
+    endpoints:
+      - all elasticsearch # for seeding, and counting
+
+  redis: crosbymichael/redis
+  twemproxy: ../../twemproxy
+  redis-sentinel: application
+
+  # Admin tools
+  #. unless docker exec is release. base these images on ssh
+  kibana: repo for kibana
+  sentry: image
+  graphite: someimage
+
+
+# This is a section that relates to the whole. and overrides for certain situations
+all-machines:
+  - collectd-statsd
+all-containers:
+  not:
+    - docker-varnish
+    - rackspace-dns-presence
+  matching: "/^\/\/(ab|[e])/$/"
+  requires:
+    - logstash-forwarder # or we can just do manual environment and mount injection because stretch knows about the whole stack.
+    - etcd-amb # The require does not apply recursively
+
+
+# Support an abstraction over xconflicts and deploy-with
+
+services: # can be referenced
+  web-proxy:
+    images:
+      - rackspace-dns-presence # images can source from other images, or config can be overridden here
+      - varnish
+
+  web:
+    images:
+      - web
+
+  db:
+    images:
+      - redis
+
+  statsd-cluster:
+
+  admin:
+    - kibana
+    - sentry
+    - graphite
+
+
+
+hosts:
+  "x-small-*":
+    - web-proxy
+    - web
+  "x-large-*-storage":
+    - search
+    - cassandra
+  "x-large-*-performance"
+    - redis
+  "machine-id:1234567890":
+    - kibana
+    - sentry
+    - graphite
+
+instances:
+  web-proxy: 5
+  web: 10
+  db: 4
+  statsd-cluster: 1
+
+
+  # stretch-make --scale=2 or scalefile, command line for autoscaling things
+# admin stack is in a totally different cloud that is separate from production and staging. this needs environments.
+# Can run pretty much anywhere fleet and docker can,
+# stretch should find the delta between a file change and only deploy things
+
+# covered by that delta.
+
+# dynamic amb:
+#  Input:
+
+#polvi/docker-register
+# reads off of the docker api and publishes data to etcd given inputs.
+
+# Try it:

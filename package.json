@@ -1,0 +1,27 @@
+{
+  "name": "stretch",
+  "version": "0.0.0",
+  "description": "Scalable service-oriented orchestration with docker.",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git://github.com/gatoralli/stretch.git"
+  },
+  "author": "Jason Sommer <jason@pictalk.com>",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/gatoralli/stretch/issues"
+  },
+  "homepage": "https://github.com/gatoralli/stretch",
+  "dependencies": {
+    "winston": "~0.7.2",
+    "nconf": "git://github.com/gatoralli/nconf.git#yaml",
+    "pkgcloud": "~0.9.4",
+    "lodash": "~2.4.1",
+    "async": "~0.2.10",
+    "chance": "~0.5.4"
+  }
+}
