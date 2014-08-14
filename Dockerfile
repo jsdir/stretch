@@ -1,5 +1,4 @@
 FROM stackbrew/ubuntu:13.10
-MAINTAINER Jason Sommer "gatoralli69@gmail.com"
 
 ADD bin /usr/share/stretch/master/bin
 ADD stretch /usr/share/stretch/master/stretch
